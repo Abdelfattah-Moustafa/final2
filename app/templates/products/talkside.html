@@ -1,0 +1,65 @@
+{% extends "_inner_base.html" %}
+{% block title %}TalkSide — Speech to Sign{% endblock %}
+{% block content %}
+<canvas id="sf-canvas" aria-hidden="true"></canvas>
+<div class="pg-hero">
+  <span class="pg-badge">Speech → Sign</span>
+  <h1 class="pg-h1">Speak.<br><em>They see sign.</em></h1>
+  <p class="pg-lead">TalkSide captures speech from any microphone and drives an avatar to sign the words in real time — making spoken environments instantly accessible to Deaf and Hard-of-Hearing users.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Capabilities at a glance</h2>
+  <div class="spec-grid">
+    <div class="spec-card"><div class="spec-val">Real-time</div><div class="spec-key">Web Speech API input</div></div>
+    <div class="spec-card"><div class="spec-val">60fps</div><div class="spec-key">Signed avatar output</div></div>
+    <div class="spec-card"><div class="spec-val">ASL + ArSL</div><div class="spec-key">Both sign languages</div></div>
+    <div class="spec-card"><div class="spec-val">No server</div><div class="spec-key">100% browser-local</div></div>
+  </div>
+</div>
+
+<div class="pg-section">
+  <h2>How it works</h2>
+  <p>TalkSide uses the Web Speech API's continuous recognition mode to stream an interim transcript as the speaker talks. Each word (or phrase chunk) is passed to the same SignType animation engine, which queues and plays the corresponding sign. Interim words are held in a pending queue until the final transcript fires, preventing premature animation commits on misrecognitions.</p>
+  <p>Speaker language is auto-detected from browser locale, but can be locked to English or Arabic in the settings panel. Arabic speech routes directly to the ArSL animation library.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Use cases</h2>
+  <div class="uc-grid">
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></div>
+      <div class="uc-title">Reception kiosks</div>
+      <p class="uc-desc">A hotel, clinic, or government reception desk with a screen running TalkSide becomes independently accessible without staff training.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
+      <div class="uc-title">Museum &amp; gallery guides</div>
+      <p class="uc-desc">Audio guides play alongside a TalkSide signing avatar on a tablet stand — no ASL-fluent staff required in every room.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+      <div class="uc-title">Classroom lectures</div>
+      <p class="uc-desc">Teacher lectures are simultaneously signed for Deaf students on a side screen, reducing dependence on a single human interpreter.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3-8.59A2 2 0 0 1 3.62 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9a16 16 0 0 0 6.19 6.19l.81-.81a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
+      <div class="uc-title">Customer service calls</div>
+      <p class="uc-desc">A call-center agent speaks; TalkSide renders sign on the Deaf customer's screen. No relay service needed.</p>
+    </div>
+  </div>
+</div>
+
+<div class="cta-strip">
+  <h3>Try TalkSide now</h3>
+  <p>Select "Speech to Sign" in the dashboard, speak into your microphone, and watch the avatar respond.</p>
+  <a href="/dashboard?lang=en" class="btn-magnetic btn-magnetic-primary" data-cursor="Enter">
+    <span class="btn-magnetic-fill"></span>
+    <span class="btn-magnetic-text">Open Dashboard</span>
+  </a>
+  <a href="/demo" class="btn-magnetic btn-magnetic-outline" data-cursor="Demo">
+    <span class="btn-magnetic-fill"></span>
+    <span class="btn-magnetic-text">Book a Demo</span>
+  </a>
+</div>
+{% endblock %}

@@ -1,0 +1,3979 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block main_style %}padding-top: 0;{% endblock %}
+{% block nav %}{% endblock %}
+
+{% block head %}
+<script>
+  // Prevents Emscripten's throwing getters (arguments, thisProgram, etc.) from aborting 
+  // when browser extensions, DevTools, or checkers inspect the global Module object.
+  const originalDefineProperty = Object.defineProperty;
+  Object.defineProperty = function(obj, prop, descriptor) {
+    if (prop === 'printErr') {
+      return originalDefineProperty(obj, prop, {
+        get: function() { return console.error; },
+        set: function() {},
+        configurable: true,
+        enumerable: true
+      });
+    }
+    if (prop === 'print') {
+      return originalDefineProperty(obj, prop, {
+        get: function() { return console.log; },
+        set: function() {},
+        configurable: true,
+        enumerable: true
+      });
+    }
+    if (prop === 'arguments') {
+      return originalDefineProperty(obj, prop, {
+        get: function() { return []; },
+        set: function() {},
+        configurable: true,
+        enumerable: true
+      });
+    }
+    if (prop === 'thisProgram') {
+      return originalDefineProperty(obj, prop, {
+        get: function() { return './thisProgram'; },
+        set: function() {},
+        configurable: true,
+        enumerable: true
+      });
+    }
+
+    if (descriptor && typeof descriptor.get === 'function') {
+      const getStr = descriptor.get.toString();
+      if (getStr.includes('replaced') || getStr.includes('has been replaced') || getStr.includes('was not exported')) {
+        descriptor.get = function() {
+          return function() {};
+        };
+        if (descriptor.set) {
+          descriptor.set = function() {};
+        }
+      }
+    }
+    return originalDefineProperty.apply(this, arguments);
+  };
+
+  window.Module = {
+    arguments: [],
+    print: console.log,
+    printErr: console.error
+  };
+
+  // Patch window.speechSynthesis.speak to keep a global reference to active SpeechSynthesisUtterance
+  // instances. This prevents Chromium garbage collection from destroying them while speaking,
+  // which can lead to speech engine corruption and worker crashes.
+  if ('speechSynthesis' in window) {
+    window.activeUtterances = [];
+    const originalSpeak = window.speechSynthesis.speak;
+    window.speechSynthesis.speak = function(utt) {
+      if (utt) {
+        window.activeUtterances.push(utt);
+        const cleanUp = () => {
+          window.activeUtterances = window.activeUtterances.filter(u => u !== utt);
+        };
+        utt.addEventListener('end', cleanUp);
+        utt.addEventListener('error', cleanUp);
+        // Fallback cleanup after 60s
+        setTimeout(cleanUp, 60000);
+      }
+      originalSpeak.call(window.speechSynthesis, utt);
+    };
+  }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/holistic.js"></script>
+<script src="https://unpkg.com/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://unpkg.com/@mediapipe/drawing_utils/drawing_utils.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="/static/js/socket.io.js"></script>
+{% endblock %}
+
+
+
+{% block content %}
+<link rel="stylesheet" href="/static/css/theme.css?v=phase6-1">
+<link rel="stylesheet" href="/static/css/ui.css?v=phase6-1">
+<script src="/static/js/theme.js?v=phase6-1"></script>
+<style>
+/* ── Dashboard-page scoped overrides ── */
+/* bg lives on <html> (the page canvas) and <body> stays transparent, so the
+   negative-z signal-line layer paints over the canvas instead of being hidden
+   by an opaque body background. */
+html{background:var(--bg)!important;overflow:hidden}
+body{background:transparent!important;overflow:hidden}
+#main-content{padding:0!important;height:100vh;overflow:hidden;background:transparent!important}
+/* app shell transparent so the ambient signal-line layer shows through .t-main
+   gaps (sidebar + cards keep their own solid surfaces, so it never competes) */
+.t-scope.t-app{background:transparent}
+
+/* ── Panel visibility ── */
+.d-panel{display:none}.d-panel.active{display:flex;flex-direction:column;flex:1;overflow:auto}
+
+/* ── Two-column content layout ── */
+.d-col{display:grid;grid-template-columns:1fr 330px;gap:22px;padding:26px 32px;align-items:start;flex:1;overflow:auto}
+@media(max-width:1100px){.d-col{grid-template-columns:1fr}}
+@media(max-width:860px){.d-col{padding:18px}}
+.d-col-l{display:flex;flex-direction:column;gap:22px;min-width:0}
+.d-col-r{display:flex;flex-direction:column;gap:20px}
+
+/* ── Viewport (camera / avatar) ── */
+.d-vp{position:relative;border-radius:14px;overflow:hidden;background:var(--viewport);border:1px solid var(--border);
+  min-height:280px;display:flex;align-items:center;justify-content:center;margin:0 20px}
+.d-vp video,.d-vp canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.d-vp-ph{display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--faint);font-size:13.5px;text-align:center;padding:24px}
+.d-vp-ph svg{width:42px;height:42px;opacity:.4}
+.d-live{position:absolute;top:13px;inset-inline-start:13px;display:inline-flex;align-items:center;gap:7px;padding:5px 11px;
+  border-radius:var(--radius-full);background:var(--badge-bg);color:#fff;font-size:11px;font-weight:700;letter-spacing:.05em;display:none}
+.d-live.is-live{display:flex}.d-live i{width:6px;height:6px;border-radius:50%;background:var(--rec);box-shadow:0 0 0 3px rgba(239,68,68,.3);animation:t-pulse 1.4s infinite}
+
+/* ── Language select (in card header) ── */
+.d-lang-sel{padding:7px 11px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-full);
+  font-size:11.5px;font-weight:600;color:var(--text);cursor:pointer;outline:none;font-family:var(--font-sans)}
+.d-lang-sel option{background:var(--surface);color:var(--text)}
+
+/* ── Transcription / gloss box ── */
+.d-box{margin:16px 20px 20px;padding:17px;border-radius:13px;background:var(--surface-2);border:1px solid var(--border)}
+.d-box-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.d-box-text{font-family:var(--font-display);font-size:18px;font-weight:500;line-height:1.45;color:var(--text);min-height:28px}
+.d-box-ph{color:var(--faint);font-size:14px;font-weight:400;font-family:var(--font-sans)}
+.d-box-hint{font-size:11px;color:var(--faint);margin-top:7px}
+.d-box-hint kbd{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:1px 5px;
+  font-family:ui-monospace,monospace;font-size:10.5px;color:var(--muted)}
+.d-box-actions{display:flex;flex-direction:column;gap:6px;flex:none}
+
+/* ── Sentence output (Sign→Speech spoken result) ── */
+.d-sentence-out{padding:18px;background:var(--surface-2);border:1.5px solid var(--border);border-radius:14px;margin:0 0 0 0}
+.d-sentence-ph{color:var(--faint);font-size:14px;font-weight:400}
+
+/* ── Log list ── */
+.d-log{display:flex;flex-direction:column;gap:2px;padding:8px 16px 16px;max-height:220px;overflow-y:auto}
+.d-log-item{display:flex;gap:11px;padding:9px 8px;border-radius:9px;font-size:13px;align-items:baseline}
+.d-log-item:hover{background:var(--surface-2)}
+.d-log-time{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums;min-width:36px;font-weight:600;flex:none}
+.d-log-msg{color:var(--text);font-weight:500;line-height:1.4}
+.d-log-gloss{font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;color:var(--accent);font-weight:600}
+.d-log-ph{font-size:12.5px;color:var(--faint);padding:8px 0}
+
+/* ── Mic state panel ── */
+.d-mic-state{padding:38px 24px;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;text-align:center;margin-bottom:20px}
+.d-mic-icon{font-size:40px;margin-bottom:12px}
+.d-mic-status{font-size:14px;font-weight:600;color:var(--muted)}
+
+/* ── Text→Sign input row ── */
+.d-t2s-row{display:flex;gap:10px;margin:0 20px 20px;padding-top:4px}
+.d-t2s-row .t-input{flex:1}
+
+/* ── Meeting shell ── */
+.d-meet{display:flex;flex-direction:column;gap:20px;padding:26px 32px;flex:1;overflow:auto}
+.d-meet-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.d-meet-title{font-family:var(--font-display);font-size:26px;font-weight:700;color:var(--text)}
+.d-meet-sub{font-size:13.5px;color:var(--muted);margin-top:6px;max-width:560px;line-height:1.5}
+.d-meet-pill{display:inline-flex;padding:7px 14px;border-radius:var(--radius-full);font-size:12px;font-weight:700;
+  background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
+.d-meet-pill.connected{background:var(--ok-soft);border-color:transparent;color:var(--ok)}
+.d-meet-pill[data-state="connecting"]{background:rgba(245,158,11,.12);border-color:transparent;color:#f59e0b}
+.d-meet-pill[data-state="connecting"]::before{content:"";width:6px;height:6px;border-radius:50%;background:#f59e0b;margin-inline-end:7px;align-self:center;animation:t-pulse 1s infinite}
+.d-meet-pill[data-state="failed"]{background:var(--danger-soft);border-color:transparent;color:var(--danger)}
+.d-meet-entry{display:flex;flex-direction:column;gap:14px;align-items:center}
+.d-meet-role{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--muted)}
+.d-meet-btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.d-meet-bar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px 22px;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.d-meet-code-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin-bottom:5px}
+.d-meet-code-val{font-family:var(--font-display);font-size:26px;font-weight:800;letter-spacing:.12em;color:var(--text)}
+.d-meet-stage{display:grid;grid-template-columns:1fr 300px;gap:20px}
+@media(max-width:960px){.d-meet-stage{grid-template-columns:1fr}}
+.d-meet-videos{display:grid;grid-template-columns:1fr 1fr;gap:12px;border-radius:14px;overflow:hidden;border:1px solid var(--border);background:var(--border);min-height:240px}
+.d-meet-vid-wrap{position:relative;background:var(--surface-2);aspect-ratio:4/3}
+.d-meet-vid-wrap video{width:100%;height:100%;object-fit:cover}
+.d-meet-vid-lbl{position:absolute;top:10px;inset-inline-start:10px;background:rgba(0,0,0,.55);color:#fff;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;z-index:5}
+.d-meet-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:13px;text-transform:uppercase;letter-spacing:.04em}
+.d-meet-controls{display:flex;gap:10px;padding:14px 0 0;flex-wrap:wrap;align-items:center}
+.d-meet-subtitle{position:absolute;bottom:24px;inset-inline-start:50%;transform:translateX(-50%);background:rgba(0,0,0,.75);
+  color:#fff;font-size:20px;font-weight:600;text-align:center;padding:12px 24px;border-radius:10px;
+  border:1px solid rgba(255,255,255,.15);z-index:15;max-width:85%;pointer-events:none;display:none}
+[dir=rtl] .d-meet-subtitle{transform:translateX(50%)}
+.d-meet-aside{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;display:flex;flex-direction:column;gap:14px}
+.d-meet-participants{border-bottom:1px solid var(--border);padding-bottom:14px}
+.d-meet-caption-box{background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:14px;min-height:120px}
+.d-meet-remote-text{font-size:15px;font-weight:600;color:var(--muted);line-height:1.55}
+
+/* ── Mobile module select & quick-actions ── */
+.d-mobile-picker{display:none;padding:14px 18px 0}
+@media(max-width:860px){.d-mobile-picker{display:block}}
+.d-mobile-qa{display:none;padding:10px 18px 0;gap:10px}
+@media(max-width:860px){.d-mobile-qa{display:flex}}
+
+/* ── Mobile bottom nav ── */
+.d-mob-nav{display:none;position:fixed;bottom:0;inset-inline-start:0;inset-inline-end:0;
+  background:var(--sidebar);border-top:1px solid var(--border);padding:8px 0 env(safe-area-inset-bottom,8px);
+  z-index:60;box-shadow:0 -8px 24px rgba(0,0,0,.08)}
+@media(max-width:860px){.d-mob-nav{display:flex}.t-sidebar{display:none}}
+.d-mob-nav a{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 4px;
+  color:var(--faint);font-size:10px;font-weight:600;text-decoration:none;transition:color var(--transition)}
+.d-mob-nav a svg{width:20px;height:20px}
+.d-mob-nav a.active{color:var(--accent)}
+
+/* ── Status dot ── */
+.d-dot{width:8px;height:8px;border-radius:50%;background:var(--faint);display:inline-block}
+.d-dot.live{background:var(--live);box-shadow:0 0 0 3px var(--live-glow)}
+
+/* ── Meeting modals (used by existing JS) ── */
+.d-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);align-items:center;
+  justify-content:center;z-index:9999;backdrop-filter:blur(8px)}
+.d-modal-overlay.is-open{display:flex}
+.d-modal-box{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:28px;
+  width:min(360px,calc(100vw - 32px));text-align:center;box-shadow:var(--shadow-lg)}
+.d-modal-title{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);margin-bottom:14px}
+.d-modal-code{font-family:var(--font-display);font-size:32px;font-weight:800;letter-spacing:.14em;color:var(--text);margin-bottom:18px}
+
+/* ── Meeting speaker-avatar corner (shown by JS via .visible) ── */
+.meeting-avatar-corner{display:none}
+.meeting-avatar-corner.visible{display:block}
+
+/* ── Debug overlay ── */
+#debug-overlay{position:fixed;bottom:12px;inset-inline-start:12px;z-index:9998;font-size:10px;
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;
+  color:var(--faint);max-width:260px;pointer-events:none;display:none}
+
+/* ── Aurora Drift background ── */
+:root{--speed:1;--intensity:.82;--m1:#1f8a82;--m2:#e2b483;--m3:#2d9d94}
+.d-aurora-bg{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.d-aurora-inner{position:absolute;inset:-15%;will-change:transform;transition:transform .3s cubic-bezier(.2,.7,.3,1);transform:translate3d(calc(var(--mx,0)*-22px),calc(var(--my,0)*-22px),0)}
+.d-blob{position:absolute;border-radius:50%;filter:blur(100px);opacity:calc(.55*var(--intensity)+.05);will-change:transform}
+.db1{width:58vw;height:58vw;inset-block-start:-10vw;inset-inline-start:-8vw;background:radial-gradient(circle at 50%,var(--m1),transparent 68%);animation:dbFlo1 calc(28s/var(--speed)) ease-in-out infinite}
+.db2{width:50vw;height:50vw;inset-block-start:20vh;inset-inline-end:-12vw;background:radial-gradient(circle at 50%,var(--m2),transparent 68%);animation:dbFlo2 calc(36s/var(--speed)) ease-in-out infinite}
+.db3{width:44vw;height:44vw;inset-block-end:-14vw;inset-inline-start:28vw;background:radial-gradient(circle at 50%,var(--m3),transparent 70%);animation:dbFlo3 calc(32s/var(--speed)) ease-in-out infinite}
+@keyframes dbFlo1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(14%,9%) scale(1.22)}}
+@keyframes dbFlo2{0%,100%{transform:translate(0,0) scale(1.08)}50%{transform:translate(-12%,11%) scale(.82)}}
+@keyframes dbFlo3{0%,100%{transform:translate(0,0) scale(.92)}50%{transform:translate(10%,-10%) scale(1.25)}}
+/* Liquid glass panels */
+.t-card{background:color-mix(in srgb,var(--surface) 72%,transparent)!important;backdrop-filter:blur(14px) saturate(140%)!important}
+.t-sidebar{background:color-mix(in srgb,var(--sidebar) 80%,transparent)!important;backdrop-filter:blur(20px) saturate(130%)!important}
+.t-topbar,.d-topbar{background:color-mix(in srgb,var(--sidebar) 75%,transparent)!important;backdrop-filter:blur(16px) saturate(130%)!important}
+@media(prefers-reduced-motion:reduce){.d-blob{animation:none!important}.d-aurora-inner{transition:none}}
+
+</style>
+
+<a href="#main-content" class="t-skip-link">Skip to content</a>
+<div id="debug-overlay"></div>
+
+<div class="t-scope t-app" id="app" style="height:100vh;overflow:hidden">
+  <!-- ── Sidebar ── -->
+  <aside class="t-sidebar">
+    <a href="/" class="t-brand" aria-label="Together — home"><span class="t-logo">T</span> Together</a>
+    <nav aria-label="Modules">
+      <a class="t-nav-item is-active" onclick="switchModule(event,'overview')" href="#" id="nav-overview" aria-current="page">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+        <span>Overview</span>
+      </a>
+      <a class="t-nav-item" onclick="switchModule(event,'vision')" href="#" id="nav-vision">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+        <span>Sign to Text</span>
+      </a>
+      <a class="t-nav-item" onclick="switchModule(event,'speech')" href="#" id="nav-speech">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11a7 7 0 0 1-7 7m0 0a7 7 0 0 1-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 0 1-3-3V5a3 3 0 1 1 6 0v6a3 3 0 0 1-3 3z"/></svg>
+        <span>Sign to Speech</span>
+      </a>
+      <a class="t-nav-item" onclick="switchModule(event,'text2sign')" href="#" id="nav-text2sign">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/></svg>
+        <span>Text to Sign</span>
+      </a>
+      <a class="t-nav-item" onclick="switchModule(event,'speech2sign')" href="#" id="nav-speech2sign">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5.882V19.24a1.76 1.76 0 0 1-3.417.592l-2.147-6.15M18 13a3 3 0 1 0 0-6M5.436 13.683A4 4 0 0 1 7 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 0 1-1.564-.317z"/></svg>
+        <span>Speech to Sign</span>
+      </a>
+      <a class="t-nav-item" onclick="switchModule(event,'meeting')" href="#" id="nav-meeting">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20h5v-2a3 3 0 0 0-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 0 1 5.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 0 1 9.288 0M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
+        <span>Live Meeting</span>
+      </a>
+    </nav>
+    <div class="t-sidebar-sep"></div>
+    <div class="t-spacer"></div>
+    <div class="t-user">
+      <div class="t-avatar" id="sb-avatar">U</div>
+      <div>
+        <div class="t-user-name" id="sb-name">User</div>
+        <div class="t-user-role" id="sb-role">Member</div>
+      </div>
+    </div>
+    <button class="t-nav-item" onclick="signOut()" style="margin-top:6px;width:100%;text-align:start" aria-label="Sign out">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 16l4-4m0 0-4-4m4 4H7m6 4v1a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v1"/></svg>
+      <span>Sign Out</span>
+    </button>
+  </aside>
+
+  <!-- ── Main area ── -->
+  <div class="t-main">
+    <!-- Topbar -->
+    <header class="t-topbar">
+      <div><div class="t-title" id="topbar-title">Sign to Text</div><div class="t-sub">Together · English dashboard</div></div>
+      <div class="t-tbar">
+        <span class="t-pill" id="status-pill" data-state="idle" aria-live="polite" aria-atomic="true">
+          <i class="t-dot"></i>
+          <span id="status-text">Ready</span>
+          <!-- hidden legacy dot kept so JS toggling status-dot.classList still works -->
+          <i id="status-dot" style="display:none"></i>
+        </span>
+        <div class="t-toggle" role="group" aria-label="Color theme">
+          <button type="button" data-theme-set="light" aria-pressed="false" aria-label="Light theme" title="Light">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.4 1.4M17.6 17.6 19 19M19 5l-1.4 1.4M6.4 17.6 5 19"/></svg>
+          </button>
+          <button type="button" data-theme-set="dark" aria-pressed="true" aria-label="Dark theme" title="Dark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A8 8 0 1 1 11.2 3 6.2 6.2 0 0 0 21 12.8Z"/></svg>
+          </button>
+        </div>
+        <div class="t-lang" aria-label="Language">
+          <a href="/dashboard?lang=en" class="is-active" aria-current="page">EN</a>
+          <a href="/dashboard?lang=ar">عربى</a>
+        </div>
+      </div>
+    </header>
+
+    <!-- Mobile module picker -->
+    <div class="d-mobile-picker">
+      <select id="mobile-module-select" class="t-input" onchange="switchModule(null,this.value)">
+        <option value="overview" selected>Overview</option>
+        <option value="vision">Sign to Text</option>
+        <option value="speech">Sign to Speech</option>
+        <option value="text2sign">Text to Sign</option>
+        <option value="speech2sign">Speech to Sign</option>
+        <option value="meeting">Live Meeting</option>
+      </select>
+    </div>
+    <div class="d-mobile-qa" id="mobile-quick-actions">
+      <button class="t-btn t-btn--accent" id="mqa-primary" onclick="runMobileQuickAction('primary')">Primary</button>
+      <button class="t-btn t-btn--ghost" id="mqa-secondary" onclick="runMobileQuickAction('secondary')">Secondary</button>
+    </div>
+
+    <!-- ══ MODULE 0: OVERVIEW ══ -->
+    <div class="d-panel module-panel active" id="panel-overview">
+      <div style="padding: 26px 32px; display: flex; flex-direction: column; gap: 20px; overflow: auto; flex: 1;">
+        <!-- Header Info Ribbon -->
+        <div class="t-card" style="padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; border-radius: var(--radius-lg);">
+          <div>
+            <p style="font-size: 14px; font-weight: 600; margin: 0;">Translation workspace</p>
+            <p style="font-size: 12px; color: var(--muted); margin: 2px 0 0 0;">Arabic + Egyptian Sign Language</p>
+          </div>
+          <span style="display: flex; align-items: center; gap: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: var(--radius-full); font-size: 11px; font-weight: 600;">
+            <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--live); animation: t-pulse 1.4s infinite;"></span> Live meeting ready
+          </span>
+        </div>
+
+        <!-- 4 Grid Cards -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+          <div class="t-card" style="padding: 20px; border-radius: var(--radius-lg); display: flex; flex-direction: column; justify-content: space-between; min-height: 120px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted);">
+              <span>Translation modes</span>
+              <span>✨</span>
+            </div>
+            <p style="font-size: 32px; font-weight: 700; margin: 12px 0 0 0; font-family: var(--font-display);">5</p>
+          </div>
+          <div class="t-card" style="padding: 20px; border-radius: var(--radius-lg); display: flex; flex-direction: column; justify-content: space-between; min-height: 120px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted);">
+              <span>Languages</span>
+              <span>🌐</span>
+            </div>
+            <p style="font-size: 32px; font-weight: 700; margin: 12px 0 0 0; font-family: var(--font-display);">Arabic / ESL</p>
+          </div>
+          <div class="t-card" style="padding: 20px; border-radius: var(--radius-lg); display: flex; flex-direction: column; justify-content: space-between; min-height: 120px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted);">
+              <span>Meeting captions</span>
+              <span>📹</span>
+            </div>
+            <p style="font-size: 32px; font-weight: 700; margin: 12px 0 0 0; font-family: var(--font-display);">Ready</p>
+          </div>
+          <div class="t-card" style="padding: 20px; border-radius: var(--radius-lg); display: flex; flex-direction: column; justify-content: space-between; min-height: 120px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted);">
+              <span>Session outputs</span>
+              <span>🔊</span>
+            </div>
+            <p style="font-size: 32px; font-weight: 700; margin: 12px 0 0 0; font-family: var(--font-display);">84</p>
+          </div>
+        </div>
+
+        <!-- 2 Column Layout -->
+        <div style="display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px;">
+          <!-- Sparkline Chart -->
+          <div class="t-card" style="padding: 24px; border-radius: var(--radius-lg);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+              <div>
+                <h3 style="font-size: 14px; font-weight: 600; margin: 0;">Conversation flow</h3>
+                <p style="font-size: 12px; color: var(--muted); margin: 2px 0 0 0;">Outputs created this session</p>
+              </div>
+              <span style="font-size: 11px; color: var(--faint); font-family: monospace;">TODAY</span>
+            </div>
+            <svg viewBox="0 0 680 170" style="width: 100%; height: 170px;" role="img" aria-label="Session translation activity">
+              <defs>
+                <linearGradient id="activityFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="var(--accent)" stop-opacity="0.14" />
+                  <stop offset="1" stop-color="var(--accent)" stop-opacity="0" />
+                </linearGradient>
+              </defs>
+              <line x1="24" x2="656" y1="28" y2="28" stroke="var(--border)" stroke-width="0.5" />
+              <line x1="24" x2="656" y1="68" y2="68" stroke="var(--border)" stroke-width="0.5" />
+              <line x1="24" x2="656" y1="108" y2="108" stroke="var(--border)" stroke-width="0.5" />
+              <line x1="24" x2="656" y1="148" y2="148" stroke="var(--border)" stroke-width="0.5" />
+              <path d="M24,118 L104,86 L184,96 L264,50 L344,62 L424,32 L504,44 L584,18 L656,30 L656,148 L24,148 Z" fill="url(#activityFill)" />
+              <path d="M24,118 L104,86 L184,96 L264,50 L344,62 L424,32 L504,44 L584,18 L656,30" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              <circle cx="24" cy="118" r="2.5" fill="var(--accent)" opacity="0.25" />
+              <circle cx="104" cy="86" r="2.5" fill="var(--accent)" opacity="0.25" />
+              <circle cx="184" cy="96" r="2.5" fill="var(--accent)" opacity="0.25" />
+              <circle cx="264" cy="50" r="2.5" fill="var(--accent)" opacity="0.25" />
+              <circle cx="344" cy="62" r="2.5" fill="var(--accent)" opacity="0.25" />
+              <circle cx="424" cy="32" r="2.5" fill="var(--accent)" opacity="0.25" />
+              <circle cx="504" cy="44" r="2.5" fill="var(--accent)" opacity="0.25" />
+              <circle cx="584" cy="18" r="2.5" fill="var(--accent)" opacity="0.25" />
+              <circle cx="656" cy="30" r="4" fill="var(--accent)" />
+            </svg>
+          </div>
+
+          <!-- MiniOrb 3D Interactive Card -->
+          <div class="t-card" style="padding: 24px; border-radius: var(--radius-lg); display: flex; flex-direction: column; justify-content: space-between;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h3 style="font-size: 14px; font-weight: 600; margin: 0;">Live interpreter</h3>
+              <span style="font-size: 11px; color: var(--faint); font-family: monospace;">ESL → AR</span>
+            </div>
+            <div id="orb-container" style="position: relative; background: #000000; border-radius: var(--radius-lg); height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden;">
+              <!-- MiniOrb Canvas gets loaded here -->
+              <p style="font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 10px; z-index: 10;">Listening for hands...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Translations Table -->
+        <div class="t-card" style="border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 24px;">
+          <div style="padding: 20px; border-bottom: 1px solid var(--border);">
+            <h3 style="font-size: 14px; font-weight: 600; margin: 0;">Recent translations</h3>
+            <p style="font-size: 12px; color: var(--muted); margin: 2px 0 0 0;">Real examples across all modes</p>
+          </div>
+          <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13.5px;">
+              <thead>
+                <tr style="border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px;">
+                  <th style="padding: 12px 20px; font-weight: 500;">Input</th>
+                  <th style="padding: 12px 20px; font-weight: 500;">Output</th>
+                  <th style="padding: 12px 20px; font-weight: 500;">Mode</th>
+                  <th style="padding: 12px 20px; font-weight: 500;">Language</th>
+                  <th style="padding: 12px 20px; font-weight: 500;">Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="border-bottom: 1px solid rgba(0,0,0,0.03);">
+                  <td style="padding: 14px 20px; font-weight: 600;">إزيك؟</td>
+                  <td style="padding: 14px 20px; color: var(--muted);">How are you?</td>
+                  <td style="padding: 14px 20px;"><span style="background: var(--accent); color: white; padding: 2px 8px; border-radius: 9999px; font-size: 11px;">Sign → Text</span></td>
+                  <td style="padding: 14px 20px; color: var(--muted);">Egyptian SL</td>
+                  <td style="padding: 14px 20px; color: var(--faint); font-family: monospace;">14:32</td>
+                </tr>
+                <tr style="border-bottom: 1px solid rgba(0,0,0,0.03);">
+                  <td style="padding: 14px 20px; font-weight: 600;">شكراً</td>
+                  <td style="padding: 14px 20px; color: var(--muted);">Thank you</td>
+                  <td style="padding: 14px 20px;"><span style="background: var(--accent); color: white; padding: 2px 8px; border-radius: 9999px; font-size: 11px;">Sign → Speech</span></td>
+                  <td style="padding: 14px 20px; color: var(--muted);">Arabic</td>
+                  <td style="padding: 14px 20px; color: var(--faint); font-family: monospace;">14:29</td>
+                </tr>
+                <tr style="border-bottom: 1px solid rgba(0,0,0,0.03);">
+                  <td style="padding: 14px 20px; font-weight: 600;">Meeting starts now</td>
+                  <td style="padding: 14px 20px; color: var(--muted);">Guided signs</td>
+                  <td style="padding: 14px 20px;"><span style="background: var(--accent); color: white; padding: 2px 8px; border-radius: 9999px; font-size: 11px;">Text → Sign</span></td>
+                  <td style="padding: 14px 20px; color: var(--muted);">English</td>
+                  <td style="padding: 14px 20px; color: var(--faint); font-family: monospace;">14:21</td>
+                </tr>
+                <tr>
+                  <td style="padding: 14px 20px; font-weight: 600;">محتاج مساعدة</td>
+                  <td style="padding: 14px 20px; color: var(--muted);">I need help</td>
+                  <td style="padding: 14px 20px;"><span style="background: var(--accent); color: white; padding: 2px 8px; border-radius: 9999px; font-size: 11px;">Speech → Sign</span></td>
+                  <td style="padding: 14px 20px; color: var(--muted);">Arabic</td>
+                  <td style="padding: 14px 20px; color: var(--faint); font-family: monospace;">14:18</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ MODULE 1: SIGN TO TEXT ══ -->
+    <div class="d-panel module-panel" id="panel-vision">
+      <div class="d-col">
+        <div class="d-col-l">
+          <div class="t-card">
+            <div class="t-card-head">
+              <div class="t-card-title">
+                <span class="t-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></span>
+                Live Camera
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <select id="cam-language-select" class="d-lang-sel">
+                  <option value="english">English (ASL)</option>
+                  <option value="arabic">Arabic (ArSL)</option>
+                  <option value="egyptian">Egyptian (EgSL)</option>
+                </select>
+                <button class="t-btn t-btn--accent" id="cam-btn" onclick="toggleCamera()">Start Camera</button>
+              </div>
+            </div>
+            <div class="d-vp">
+              <video id="webcam" autoplay playsinline style="display:none"></video>
+              <canvas id="output_canvas" style="display:none"></canvas>
+              <div class="d-vp-ph" id="cam-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.869v6.262a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                <p>Camera feed will appear here</p>
+              </div>
+              <div class="t-vp-loading" id="cam-loading" aria-hidden="true"><div class="t-spinner"></div><span>Starting camera…</span></div>
+              <div class="d-live" id="live-badge"><i></i> LIVE</div>
+            </div>
+            <div class="d-box">
+              <div class="t-eyebrow">Transcription</div>
+              <div class="d-box-row">
+                <div>
+                  <div class="d-box-text" id="transcription-output"><span class="d-box-ph">Waiting for input…</span></div>
+                  <div class="d-box-hint">Press <kbd>Enter</kbd> to compose a grammatical sentence</div>
+                </div>
+                <div class="d-box-actions">
+                  <button onclick="triggerSentenceTranslation()" class="t-btn t-btn--soft">Compose</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="d-col-r">
+          <div class="t-card">
+            <div class="t-card-title t-card-title--sm">Session Log</div>
+            <div class="d-log" id="session-log">
+              <p class="d-log-ph">No signs detected yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ MODULE 2: SIGN TO SPEECH ══ -->
+    <div class="d-panel module-panel" id="panel-speech">
+      <div class="d-col">
+        <div class="d-col-l">
+          <div class="t-card">
+            <div class="t-card-head">
+              <div class="t-card-title">
+                <span class="t-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M15 10l4.553-2.069A1 1 0 0121 8.869v6.262a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg></span>
+                Live Camera
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <select id="s2sp-cam-language-select" class="d-lang-sel">
+                  <option value="english">English (ASL)</option>
+                  <option value="arabic">Arabic (ArSL)</option>
+                  <option value="egyptian">Egyptian (EgSL)</option>
+                </select>
+                <button class="t-btn t-btn--accent" id="s2sp-cam-btn" onclick="toggleS2SpCamera()">Start Camera</button>
+              </div>
+            </div>
+            <div class="d-vp">
+              <video id="s2sp-webcam" autoplay playsinline style="display:none"></video>
+              <canvas id="s2sp-canvas" style="display:none"></canvas>
+              <div class="d-vp-ph" id="s2sp-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.869v6.262a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                <p>Camera feed will appear here</p>
+              </div>
+              <div class="t-vp-loading" id="s2sp-loading" aria-hidden="true"><div class="t-spinner"></div><span>Starting camera…</span></div>
+              <div class="d-live" id="s2sp-badge"><i></i> LIVE</div>
+            </div>
+            <div class="d-box" style="margin-bottom:14px">
+              <div class="t-eyebrow">Detected Signs</div>
+              <div class="d-box-row">
+                <div>
+                  <div class="d-box-text" id="s2sp-gloss-output"><span class="d-box-ph">Signs appear here…</span></div>
+                  <div class="d-box-hint">Press <kbd>Enter</kbd> to form &amp; speak sentence</div>
+                </div>
+                <div class="d-box-actions">
+                  <button onclick="s2spTriggerSentence()" class="t-btn t-btn--soft">Compose</button>
+                </div>
+              </div>
+            </div>
+            <div class="d-sentence-out" style="margin:0 20px 20px">
+              <div class="t-eyebrow" style="margin-bottom:9px">Spoken Sentence</div>
+              <div class="d-box-text" id="s2sp-sentence-output"><span class="d-sentence-ph">Waiting for signs…</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="d-col-r">
+          <div class="t-card">
+            <div class="t-card-title t-card-title--sm">Sentence Log</div>
+            <div class="d-log" id="s2sp-log">
+              <p class="d-log-ph">No sentences spoken yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ MODULE 3: TEXT TO SIGN ══ -->
+    <div class="d-panel module-panel" id="panel-text2sign">
+      <div class="d-col">
+        <div class="d-col-l">
+          <div class="t-card">
+            <div class="t-card-head">
+              <div class="t-card-title">
+                <span class="t-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/></svg></span>
+                Text Input
+              </div>
+            </div>
+            <div class="d-t2s-row">
+              <input id="text2sign-input" type="text" class="t-input" placeholder="Type text to translate to sign…"
+                onkeypress="if(event.key==='Enter')sendText2Sign()">
+              <button class="t-btn t-btn--accent" onclick="sendText2Sign()" aria-label="Send">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M17 8l4 4m0 0-4 4m4-4H3"/></svg>
+              </button>
+            </div>
+            <div class="d-vp" style="margin:0 20px 20px;aspect-ratio:4/3">
+              <canvas id="avatar_canvas" style="width:100%;height:100%"></canvas>
+              <div class="d-vp-ph" id="avatar-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM12 14a7 7 0 0 0-7 7h14a7 7 0 0 0-7-7z"/></svg>
+                <p>Avatar will sign your text here</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="d-col-r">
+          <div class="t-card">
+            <div class="t-card-title t-card-title--sm">Recent Translations</div>
+            <div class="d-log" id="t2s-history" style="max-height:380px">
+              <p class="d-log-ph">No translations yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ MODULE 4: SPEECH TO SIGN ══ -->
+    <div class="d-panel module-panel" id="panel-speech2sign">
+      <div class="d-col">
+        <div class="d-col-l">
+          <div class="t-card">
+            <div class="t-card-head">
+              <div class="t-card-title">
+                <span class="t-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M11 5.882V19.24a1.76 1.76 0 0 1-3.417.592l-2.147-6.15M18 13a3 3 0 1 0 0-6M5.436 13.683A4 4 0 0 1 7 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 0 1-1.564-.317z"/></svg></span>
+                Microphone Input
+              </div>
+              <button class="t-btn t-btn--accent" id="mic-btn" onclick="toggleMic()">Start Listening</button>
+            </div>
+            <div class="d-mic-state" id="mic-state">
+              <div class="d-mic-icon" id="mic-icon">🎙️</div>
+              <div class="d-mic-status" id="mic-status">Click "Start Listening" to begin</div>
+            </div>
+            <div class="d-box">
+              <div class="t-eyebrow">Recognized Speech</div>
+              <div class="d-box-text" id="speech-output"><span class="d-box-ph">Waiting…</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="d-col-r">
+          <div class="t-card" style="flex:1">
+            <div class="t-card-title t-card-title--sm">Sign Avatar</div>
+            <div class="d-vp" style="margin:10px 20px 20px;aspect-ratio:1">
+              <canvas id="s2s-avatar-canvas" style="width:100%;height:100%"></canvas>
+              <div class="d-vp-ph">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM12 14a7 7 0 0 0-7 7h14a7 7 0 0 0-7-7z"/></svg>
+                <p>Avatar output</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ MODULE 5: LIVE MEETING ══ -->
+    <div class="d-panel module-panel" id="panel-meeting">
+      <div class="d-meet">
+        <div class="d-meet-hero">
+          <div>
+            <div class="d-meet-title">Live Meeting</div>
+            <div class="d-meet-sub">Start a new call or enter a meeting code. Share the link and collaborate with real-time sign-language translation.</div>
+          </div>
+          <span class="d-meet-pill" id="meeting-status-pill">Not connected</span>
+        </div>
+
+        <div class="d-meet-entry meet-entry-row">
+          <div class="d-meet-role">
+            <span class="t-eyebrow">Choose your role:</span>
+            <select id="meeting-role-select" class="d-lang-sel">
+              <option value="signer">Signer (Deaf/HoH)</option>
+              <option value="speaker">Speaker</option>
+            </select>
+          </div>
+          <div class="d-meet-btns">
+            <button class="t-btn t-btn--accent t-btn--lg" onclick="triggerCreateMeeting()">Create Meeting</button>
+            <button class="t-btn t-btn--ghost t-btn--lg" onclick="triggerJoinMeeting()">Join Meeting</button>
+          </div>
+          <input id="meeting-room-id" type="hidden" value="general">
+        </div>
+
+        <div class="d-meet-bar">
+          <div>
+            <div class="d-meet-code-lbl">Current meeting code</div>
+            <div class="d-meet-code-val" id="meeting-current-code">-</div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="t-btn t-btn--ghost" id="copy-link-btn" onclick="copyMeetingLink()" disabled>Copy meeting link</button>
+            <button class="t-btn t-btn--ghost" onclick="leaveMeeting()" id="leave-btn" style="display:none">Leave call</button>
+          </div>
+        </div>
+
+        <div class="d-meet-stage meet-stage">
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <div class="t-card-title" style="font-size:14px">Meeting stage</div>
+              <div style="font-size:12px;color:var(--faint)" id="meeting-stage-label">Waiting to join</div>
+            </div>
+            <div style="position:relative">
+              <div class="d-meet-videos">
+                <div class="d-meet-vid-wrap">
+                  <video id="meeting-local-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;display:none"></video>
+                  <div id="local-video-placeholder" class="d-meet-ph">Camera Off</div>
+                  <div class="d-meet-vid-lbl">You</div>
+                </div>
+                <div class="d-meet-vid-wrap">
+                  <div class="meeting-avatar-corner" id="meeting-avatar-corner" style="position:absolute;inset:0;z-index:5">
+                    <div class="d-meet-vid-lbl" style="z-index:10">Speaker Avatar</div>
+                    <canvas id="meeting-avatar-canvas" style="width:100%;height:100%;object-fit:cover"></canvas>
+                  </div>
+                  <video id="remote_video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;display:none"></video>
+                  <div id="meeting-video-placeholder" class="d-meet-ph">Waiting for peer…</div>
+                  <div class="d-meet-vid-lbl" id="remote-video-label">Peer</div>
+                </div>
+              </div>
+              <div class="d-meet-subtitle" id="meeting-subtitle-overlay">Waiting for peer…</div>
+            </div>
+            <div class="d-meet-controls">
+              <button class="t-btn t-btn--ghost" id="meeting-cam-btn" onclick="toggleMeetingCamera()">📷 Camera Off</button>
+              <button class="t-btn t-btn--ghost" id="meeting-mic-btn" onclick="toggleMeetingMic()">🔇 Mic Off</button>
+              <button class="t-btn t-btn--ghost" id="meeting-sign-btn" onclick="toggleMeetingSignInput()" style="display:none">🤟 Sign Input Off</button>
+              <div class="d-meet-controls" id="meeting-composer" style="display:none;flex:1">
+                <input id="meeting-text-input" class="t-input" placeholder="Type a message to convert for Deaf/HoH participant"
+                  onkeypress="if(event.key==='Enter')sendMeetingText()" style="flex:1;border-radius:var(--radius-full)">
+                <button class="t-btn t-btn--accent" onclick="sendMeetingText()">Send</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-meet-aside">
+            <div class="d-meet-participants">
+              <div class="t-eyebrow" style="margin-bottom:10px">Participants</div>
+              <div id="participants-list" style="display:flex;flex-direction:column;gap:6px;font-size:13px">
+                <div id="participant-self" style="font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px">You</div>
+                <div id="participant-peer" style="color:var(--faint);display:flex;align-items:center;gap:6px;font-style:italic">Waiting for peer…</div>
+              </div>
+            </div>
+            <div class="t-eyebrow" id="meeting-caption-label">Live captions</div>
+            <div class="d-meet-caption-box">
+              <div class="d-meet-remote-text" id="remote-sentence">No messages yet.</div>
+              <div id="remote-sentence-box" style="display:none"></div>
+            </div>
+            <button class="t-btn t-btn--ghost" id="meeting-speech-out-btn" onclick="toggleMeetingSpeechOut()" style="display:none">🔊 Read captions</button>
+          </div>
+        </div>
+
+        <!-- ── Meeting modals ── -->
+        <div id="join-meeting-modal" class="d-modal-overlay">
+          <div class="d-modal-box">
+            <div class="d-modal-title">Join Meeting</div>
+            <input id="modal-meeting-code" class="t-input" placeholder="Enter 5-Letter Code" maxlength="5"
+              style="text-transform:uppercase;text-align:center;font-size:18px;letter-spacing:4px;font-weight:700;margin-bottom:16px">
+            <div style="display:flex;gap:10px;justify-content:center">
+              <button class="t-btn t-btn--ghost" onclick="closeJoinModal()">Cancel</button>
+              <button class="t-btn t-btn--accent" onclick="submitJoinModal()">Join</button>
+            </div>
+          </div>
+        </div>
+        <div id="create-meeting-modal" class="d-modal-overlay">
+          <div class="d-modal-box">
+            <div class="d-modal-title">Meeting Created</div>
+            <div class="d-modal-code" id="modal-created-code">ABCDE</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <button class="t-btn t-btn--accent" id="modal-copy-btn" onclick="copyCreatedCode()">Copy Code &amp; Link</button>
+              <button class="t-btn t-btn--ghost" onclick="closeCreateModal()">Start Meeting</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /.t-main -->
+
+  <!-- ── Mobile bottom nav ── -->
+  <nav class="d-mob-nav" id="mobile-bottom-nav" aria-label="Main navigation">
+    <a href="#" onclick="switchModule(event,'vision')" id="mob-nav-vision" class="active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+      <span>Signs</span>
+    </a>
+    <a href="#" onclick="switchModule(event,'speech')" id="mob-nav-speech">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.869v6.262a1 1 0 0 1-1.447.894L15 14M5 18h8a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/></svg>
+      <span>Speech</span>
+    </a>
+    <a href="#" onclick="switchModule(event,'text2sign')" id="mob-nav-text2sign">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/></svg>
+      <span>Text</span>
+    </a>
+    <a href="#" onclick="switchModule(event,'speech2sign')" id="mob-nav-speech2sign">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5.882V19.24a1.76 1.76 0 0 1-3.417.592l-2.147-6.15M18 13a3 3 0 1 0 0-6M5.436 13.683A4 4 0 0 1 7 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 0 1-1.564-.317z"/></svg>
+      <span>Mic</span>
+    </a>
+    <a href="#" onclick="switchModule(event,'meeting')" id="mob-nav-meeting">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20h5v-2a3 3 0 0 0-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 0 1 5.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 0 1 9.288 0M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
+      <span>Meeting</span>
+    </a>
+  </nav>
+</div><!-- /.t-scope.t-app -->
+
+<div class="d-aurora-bg" aria-hidden="true">
+  <div class="d-aurora-inner">
+    <span class="d-blob db1"></span>
+    <span class="d-blob db2"></span>
+    <span class="d-blob db3"></span>
+  </div>
+</div>
+<script>
+(function(){
+  var root=document.documentElement,rm=matchMedia('(prefers-reduced-motion:reduce)'),tx=0,ty=0,cx=0,cy=0;
+  function pmove(e){tx=(e.clientX/innerWidth-.5)*2;ty=(e.clientY/innerHeight-.5)*2}
+  function ploop(){cx+=(tx-cx)*.04;cy+=(ty-cy)*.04;root.style.setProperty('--mx',cx.toFixed(3));root.style.setProperty('--my',cy.toFixed(3));requestAnimationFrame(ploop)}
+  if(!rm.matches){addEventListener('pointermove',pmove,{passive:true});ploop()}
+})();
+</script>
+
+<script src="/static/js/app.js"></script>
+<script>
+  // ── Global JavaScript Error Boundary ──
+  window.onerror = function(message, source, lineno, colno, error) {
+    const errorMsg = `JS Error: ${message} at ${source}:${lineno}:${colno}`;
+    console.error(errorMsg, error);
+    showDebugError(errorMsg + (error && error.stack ? '\n' + error.stack : ''));
+    return false;
+  };
+  window.onunhandledrejection = function(event) {
+    const errorMsg = `Unhandled Promise Rejection: ${event.reason}`;
+    console.error(errorMsg, event.reason);
+    showDebugError(errorMsg + (event.reason && event.reason.stack ? '\n' + event.reason.stack : ''));
+  };
+  function showDebugError(msg) {
+    let errorBanner = document.getElementById('debug-error-banner');
+    if (!errorBanner) {
+      errorBanner = document.createElement('div');
+      errorBanner.id = 'debug-error-banner';
+      errorBanner.style.position = 'fixed';
+      errorBanner.style.top = '0';
+      errorBanner.style.left = '0';
+      errorBanner.style.width = '100%';
+      errorBanner.style.background = '#ff3b30';
+      errorBanner.style.color = '#fff';
+      errorBanner.style.padding = '12px 24px';
+      errorBanner.style.zIndex = '999999';
+      errorBanner.style.fontFamily = 'monospace';
+      errorBanner.style.fontSize = '12px';
+      errorBanner.style.whiteSpace = 'pre-wrap';
+      errorBanner.style.lineHeight = '1.4';
+      errorBanner.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
+      errorBanner.style.display = 'flex';
+      errorBanner.style.justifyContent = 'space-between';
+      errorBanner.style.alignItems = 'flex-start';
+      
+      const textNode = document.createElement('div');
+      textNode.id = 'debug-error-banner-text';
+      textNode.style.flex = '1';
+      errorBanner.appendChild(textNode);
+      
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '✕';
+      closeBtn.style.background = 'none';
+      closeBtn.style.border = 'none';
+      closeBtn.style.color = '#fff';
+      closeBtn.style.fontSize = '16px';
+      closeBtn.style.cursor = 'pointer';
+      closeBtn.style.marginLeft = '16px';
+      closeBtn.style.padding = '0';
+      closeBtn.onclick = () => errorBanner.style.display = 'none';
+      errorBanner.appendChild(closeBtn);
+      
+      document.body.appendChild(errorBanner);
+    }
+    document.getElementById('debug-error-banner-text').textContent = msg;
+    errorBanner.style.display = 'flex';
+  }
+
+  // ── Global Language Overrides ──
+  const forcedLang = 'en';
+
+  let cameraOn = false;
+  let ttsOn = false;
+  let holistic = null;
+  let mpCamera = null;
+  let signs = [];           // session log items {text, time}
+
+  // Gloss accumulation for LLM call
+  let glossBuffer = [];      // detected sign words since last sentence
+  let lastSignTime = 0;
+  const GLOSS_PAUSE_MS = 3000;   // 3 s of silence triggers LLM
+  let glossTimer = null;
+
+  let voteBuffer = [];   // recent raw predictions from server
+  let consecutiveHand = 0;    // frames where hands are detected
+  let handGapCounter = 0;    // dropout tolerance
+  let globalCooldown = 0;    // frames remaining to skip inference
+  let lastPredWord = null;
+  let inferenceRunning = false; // prevent overlapping async calls
+  let _warmingUp = false;      // flag: warmup request in flight, ignore its result
+
+  // Dedup state for handleDetectedSign
+  let lastAccepted = null;
+  let sameSignCount = 0;
+  const SAME_SIGN_REPEAT = 3;  // allow re-adding same sign after 3 repeats
+
+  // Rolling 60-frame buffer for Sign-to-Text (Feature 1)
+  const SEQ_LENGTH = 60;
+  let frameBuffer = [];
+  const VOTE_BUFFER_SIZE = 6;
+  const STABILITY_FRAMES = 3;
+  const GLOBAL_COOLDOWN_FRM = 30;
+  const MIN_HAND_FRAMES = 3;
+  const MAX_HAND_GAP_FRAMES = 5;  // tolerance for flickering hand detection
+  const MIN_SEQ_FRAMES = 30;
+  const moduleMap = {
+    overview: { panel: 'panel-overview', nav: 'nav-overview', title: 'Overview' },
+    vision: { panel: 'panel-vision', nav: 'nav-vision', title: 'Sign to Text' },
+    speech: { panel: 'panel-speech', nav: 'nav-speech', title: 'Sign to Speech' },
+    text2sign: { panel: 'panel-text2sign', nav: 'nav-text2sign', title: 'Text to Sign' },
+    speech2sign: { panel: 'panel-speech2sign', nav: 'nav-speech2sign', title: 'Speech to Sign' },
+    meeting: { panel: 'panel-meeting', nav: 'nav-meeting', title: 'Live Meeting' },
+  };
+  let socket = null;
+  let inMeeting = false;
+  let meetingMicOn = false;
+  let meetingMicRec = null;
+  let meetingMicMediaRec = null;
+  let meetingMicAudioChunks = [];
+  let meetingCamOn = false;
+  let meetingCamStream = null;
+  let meetingSignInputOn = false;
+  let meetingSpeechOutOn = true;
+  let meetingAvatarPlaying = false;
+  let peerConnection = null;
+  let iceCandidateBuffer = [];
+  let peerSocketId = null;
+  let currentModule = 'overview';
+  // ═══════════════════════════════════════════════════════════
+  // AUTH GUARD + USER INFO
+  // ═══════════════════════════════════════════════════════════
+  requireAuth();
+  const user = getUser();
+  const displayName = getDisplayName();
+  const initials = getInitials();
+  let userRole = ((user && user.role) || '').toString();
+  const userRoleLower = userRole.toLowerCase();
+  let isDeafHohUser = userRoleLower.includes('deaf') || userRoleLower.includes('hoh') || userRoleLower.includes('hard of hearing');
+  let isSpeakerUser = userRoleLower.includes('speaker') || !isDeafHohUser;
+
+  function getDefaultModuleForRole(role) {
+    const r = (role || '').toString().toLowerCase();
+    if (r.includes('deaf') || r.includes('hoh') || r.includes('hard of hearing')) {
+      return 'speech2sign';
+    }
+    return 'vision';
+  }
+  const defaultModuleByRole = getDefaultModuleForRole(user && user.role);
+
+  document.getElementById('sb-avatar').textContent = initials;
+  document.getElementById('sb-name').textContent = displayName;
+  if (user && user.role) document.getElementById('sb-role').textContent = user.role;
+
+  // ── UI Localization Implementation ──
+  function applyLocalization() {
+    if (forcedLang === 'ar') {
+      // 1. Force the model to Arabic and hide the select elements
+      const langSelect1 = document.getElementById('cam-language-select');
+      const langSelect2 = document.getElementById('s2sp-cam-language-select');
+      if (langSelect1) {
+        langSelect1.value = 'arabic';
+        langSelect1.style.display = 'inline-block';
+        if (langSelect1.options[0]) langSelect1.options[0].style.display = 'none'; // Hide English
+      }
+      if (langSelect2) {
+        langSelect2.value = 'arabic';
+        langSelect2.style.display = 'inline-block';
+        if (langSelect2.options[0]) langSelect2.options[0].style.display = 'none'; // Hide English
+      }
+
+      // 2. Inject CSS rules for RTL and Thmanyah font-family
+      const style = document.createElement('style');
+      style.innerHTML = `
+        * {
+          font-family: 'Thmanyah Sans', sans-serif !important;
+        }
+        .title-ar {
+          font-family: 'Thmanyah Serif Display', serif !important;
+        }
+        body, html {
+          direction: rtl !important;
+          text-align: right !important;
+        }
+        .sidebar {
+          right: 0 !important;
+          left: auto !important;
+          border-right: none !important;
+          border-left: 1px solid rgba(255, 255, 255, 0.14) !important;
+        }
+        .dash-main {
+          margin-right: 220px !important;
+          margin-left: 0 !important;
+        }
+        @media (max-width: 1100px) {
+          .dash-main {
+            margin-right: 76px !important;
+            margin-left: 0 !important;
+          }
+        }
+        @media (max-width: 768px) {
+          .dash-main {
+            margin-right: 0 !important;
+          }
+        }
+        .sidebar-item svg {
+          margin-left: 14px;
+          margin-right: 0;
+        }
+        .sidebar-item {
+          flex-direction: row-reverse;
+        }
+        .card-header, .dash-topbar, .meet-hero, .meet-room-bar, .meet-video-header, .meet-controls {
+          flex-direction: row-reverse !important;
+        }
+        .text-input-row {
+          flex-direction: row-reverse !important;
+        }
+        .transcription-box {
+          flex-direction: row-reverse !important;
+        }
+      `;
+      document.head.appendChild(style);
+
+      // 3. Translate the module names
+      moduleMap.vision.title = 'الترجمة إلى نص';
+      moduleMap.speech.title = 'الترجمة إلى كلام';
+      moduleMap.text2sign.title = 'تحويل النص إلى إشارة';
+      moduleMap.speech2sign.title = 'تحويل الكلام إلى إشارة';
+      moduleMap.meeting.title = 'اجتماع مباشر';
+
+      // 4. Translate sidebar items
+      const navVision = document.getElementById('nav-vision');
+      if (navVision) navVision.querySelector('.sidebar-label').textContent = 'الترجمة إلى نص';
+      const navSpeech = document.getElementById('nav-speech');
+      if (navSpeech) navSpeech.querySelector('.sidebar-label').textContent = 'الترجمة إلى كلام';
+      const navText2sign = document.getElementById('nav-text2sign');
+      if (navText2sign) navText2sign.querySelector('.sidebar-label').textContent = 'تحويل النص إلى إشارة';
+      const navSpeech2sign = document.getElementById('nav-speech2sign');
+      if (navSpeech2sign) navSpeech2sign.querySelector('.sidebar-label').textContent = 'تحويل الكلام إلى إشارة';
+      const navMeeting = document.getElementById('nav-meeting');
+      if (navMeeting) navMeeting.querySelector('.sidebar-label').textContent = 'اجتماع مباشر';
+
+      // Sign out button sidebar
+      const sbSignout = document.querySelector('.sidebar-user button');
+      if (sbSignout) sbSignout.querySelector('.sidebar-label').textContent = 'تسجيل الخروج';
+      const topSignout = document.getElementById('topbar-signout');
+      if (topSignout) topSignout.textContent = 'تسجيل الخروج';
+
+      // User Role mapping translation
+      const roleEl = document.getElementById('sb-role');
+      if (roleEl) {
+        if (roleEl.textContent.toLowerCase().includes('speaker')) roleEl.textContent = 'متحدث';
+        else roleEl.textContent = 'أصم / ضعيف سمع';
+      }
+
+      // 5. Translate text inside pages
+      // -- Vision Panel --
+      const pVision = document.getElementById('panel-vision');
+      if (pVision) {
+        const cardTitle = pVision.querySelector('.card-title');
+        if (cardTitle) {
+          for (let node of cardTitle.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE && node.nodeValue.trim()) {
+              node.nodeValue = ' الكاميرا المباشرة';
+            }
+          }
+        }
+        const camBtn = document.getElementById('cam-btn');
+        if (camBtn) camBtn.textContent = 'تشغيل الكاميرا';
+        
+        const placeholder = document.getElementById('cam-placeholder');
+        if (placeholder) {
+          placeholder.querySelector('p').textContent = 'ستظهر تغذية الكاميرا هنا';
+        }
+
+        const liveBadge = document.getElementById('live-badge');
+        if (liveBadge) liveBadge.textContent = '● مباشر';
+
+        const transcriptionBox = pVision.querySelector('.transcription-box');
+        if (transcriptionBox) {
+          transcriptionBox.querySelector('.label').textContent = 'النص المترجم';
+          transcriptionBox.querySelector('.transcription-placeholder').textContent = 'بانتظار الإشارة...';
+          const kbdTip = transcriptionBox.querySelector('div[style*="font-size:10.5px"]');
+          if (kbdTip) kbdTip.style.display = 'none';
+          const actionBtn = transcriptionBox.querySelector('.action-btn');
+          if (actionBtn) actionBtn.style.display = 'none';
+        }
+
+        const logCard = pVision.querySelector('.dash-card:nth-of-type(2)') || pVision.querySelector('div[style*="flex-direction:column"] .dash-card');
+        if (logCard) {
+          logCard.querySelector('.card-title').textContent = 'سجل الجلسة';
+          const log = document.getElementById('session-log');
+          if (log && log.querySelector('p')) log.querySelector('p').textContent = 'لم يتم الكشف عن إشارات بعد.';
+        }
+      }
+
+      // -- Speech Panel --
+      const pSpeech = document.getElementById('panel-speech');
+      if (pSpeech) {
+        const cardTitle = pSpeech.querySelector('.card-title');
+        if (cardTitle) {
+          for (let node of cardTitle.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE && node.nodeValue.trim()) {
+              node.nodeValue = ' الكاميرا المباشرة';
+            }
+          }
+        }
+        const camBtn = document.getElementById('s2sp-cam-btn');
+        if (camBtn) camBtn.textContent = 'تشغيل الكاميرا';
+
+        const placeholder = document.getElementById('s2sp-placeholder');
+        if (placeholder) {
+          placeholder.querySelector('p').textContent = 'ستظهر تغذية الكاميرا هنا';
+        }
+
+        const liveBadge = document.getElementById('s2sp-badge');
+        if (liveBadge) liveBadge.textContent = '● مباشر';
+
+        const boxes = pSpeech.querySelectorAll('.transcription-box, div[style*="background:var(--gray-50)"]');
+        if (boxes[0]) {
+          boxes[0].querySelector('.label').textContent = 'الإشارات المكتشفة';
+          boxes[0].querySelector('.transcription-placeholder').textContent = 'تظهر الإشارات هنا...';
+          const kbdTip = boxes[0].querySelector('div[style*="font-size:10.5px"]');
+          if (kbdTip) kbdTip.style.display = 'none';
+          const actionBtn = boxes[0].querySelector('.action-btn');
+          if (actionBtn) actionBtn.style.display = 'none';
+        }
+
+        if (boxes[1]) {
+          boxes[1].querySelector('.label').textContent = 'الجملة المنطوقة';
+          boxes[1].querySelector('span').textContent = 'بانتظار الإشارات...';
+        }
+
+        const logCard = pSpeech.querySelector('.dash-card:nth-of-type(2)') || pSpeech.querySelector('div[style*="flex-direction:column"] .dash-card');
+        if (logCard) {
+          logCard.querySelector('.card-title').textContent = 'سجل الجمل';
+          const log = document.getElementById('s2sp-log');
+          if (log && log.querySelector('p')) log.querySelector('p').textContent = 'لم يتم نطق أي جمل بعد.';
+        }
+      }
+
+      // -- Text to Sign Panel --
+      const pText2Sign = document.getElementById('panel-text2sign');
+      if (pText2Sign) {
+        const cardTitle = pText2Sign.querySelector('.card-title');
+        if (cardTitle) {
+          for (let node of cardTitle.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE && node.nodeValue.trim()) {
+              node.nodeValue = ' إدخال النص';
+            }
+          }
+        }
+        const input = document.getElementById('text2sign-input');
+        if (input) input.placeholder = 'اكتب النص للترجمة إلى لغة الإشارة...';
+
+        const placeholder = document.getElementById('avatar-placeholder');
+        if (placeholder) {
+          placeholder.querySelector('p').textContent = 'سيقوم الأفاتار بتمثيل النص هنا';
+        }
+
+        const historyCard = pText2Sign.querySelector('.dash-card:nth-of-type(2)');
+        if (historyCard) {
+          historyCard.querySelector('.card-title').textContent = 'الترجمات الأخيرة';
+          const log = document.getElementById('t2s-history');
+          if (log && log.querySelector('p')) log.querySelector('p').textContent = 'لا توجد ترجمات بعد.';
+        }
+      }
+
+      // -- Speech to Sign Panel --
+      const pSpeech2Sign = document.getElementById('panel-speech2sign');
+      if (pSpeech2Sign) {
+        const cardTitle = pSpeech2Sign.querySelector('.card-title');
+        if (cardTitle) {
+          for (let node of cardTitle.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE && node.nodeValue.trim()) {
+              node.nodeValue = ' إدخال الميكروفون';
+            }
+          }
+        }
+        const micBtn = document.getElementById('mic-btn');
+        if (micBtn) micBtn.textContent = 'بدء الاستماع';
+
+        const micStatus = document.getElementById('mic-status');
+        if (micStatus) micStatus.textContent = 'انقر على "بدء الاستماع" للبدء';
+
+        const recognizedSpeech = pSpeech2Sign.querySelector('.transcription-box');
+        if (recognizedSpeech) {
+          recognizedSpeech.querySelector('.label').textContent = 'الكلام المستوعب';
+          recognizedSpeech.querySelector('.transcription-placeholder').textContent = 'بانتظار...';
+        }
+
+        const avatarCard = pSpeech2Sign.querySelector('.dash-card:nth-of-type(2)');
+        if (avatarCard) {
+          avatarCard.querySelector('.card-title').textContent = 'أفاتار الإشارة';
+          avatarCard.querySelector('.viewport-placeholder p').textContent = 'مخرج الأفاتار';
+        }
+      }
+
+      // -- Live Meeting Panel --
+      const pMeeting = document.getElementById('panel-meeting');
+      if (pMeeting) {
+        pMeeting.querySelector('.meet-title').textContent = 'اجتماع مباشر';
+        pMeeting.querySelector('.meet-subtitle').textContent = 'ابدأ مكالمة جديدة أو أدخل رمز الاجتماع. شارك الرابط وتعاون مع ترجمة فورية للغة الإشارة.';
+        document.getElementById('meeting-status-pill').textContent = 'غير متصل';
+
+        const btns = pMeeting.querySelectorAll('.btn');
+        if (btns[0]) btns[0].textContent = 'اجتماع جديد';
+        if (btns[1]) btns[1].textContent = 'انضمام';
+        const input = document.getElementById('meeting-room-id');
+        if (input) input.placeholder = 'أدخل رمز الاجتماع';
+
+        pMeeting.querySelector('.meet-code-label').textContent = 'رمز الاجتماع الحالي';
+        const copyBtn = document.getElementById('copy-link-btn');
+        if (copyBtn) copyBtn.textContent = 'نسخ رابط الاجتماع';
+        const leaveBtn = document.getElementById('leave-btn');
+        if (leaveBtn) leaveBtn.textContent = 'مغادرة المكالمة';
+
+        pMeeting.querySelector('.meet-video-title').textContent = 'ساحة الاجتماع';
+        document.getElementById('meeting-stage-label').textContent = 'بانتظار الانضمام';
+        pMeeting.querySelector('.meeting-avatar-corner .label').textContent = 'أفاتار المتحدث';
+        document.getElementById('meeting-video-placeholder').textContent = 'انضم إلى الغرفة لبدء تلقي التعليقات المباشرة';
+
+        document.getElementById('meeting-cam-btn').textContent = '📷 إيقاف الكاميرا';
+        document.getElementById('meeting-mic-btn').textContent = '🔇 إيقاف الميكروفون';
+        document.getElementById('meeting-sign-btn').textContent = '🤟 إيقاف مدخل الإشارة';
+
+        document.getElementById('meeting-caption-label').textContent = 'التعليقات المباشرة من المشاركين';
+        document.getElementById('remote-sentence').textContent = 'لا توجد رسائل بعد.';
+        const meetInput = document.getElementById('meeting-text-input');
+        if (meetInput) meetInput.placeholder = 'اكتب رسالة لتحويلها للمشارك الأصم';
+        pMeeting.querySelector('.meeting-composer button').textContent = 'إرسال';
+        document.getElementById('meeting-speech-out-btn').textContent = '🔇 التعليقات فقط';
+      }
+
+      // 6. Translate select options for mobile selection dropdown
+      const mobSelect = document.getElementById('mobile-module-select');
+      if (mobSelect) {
+        mobSelect.options[0].text = 'الترجمة إلى نص';
+        mobSelect.options[1].text = 'الترجمة إلى كلام';
+        mobSelect.options[2].text = 'تحويل النص إلى إشارة';
+        mobSelect.options[3].text = 'تحويل الكلام إلى إشارة';
+        mobSelect.options[4].text = 'اجتماع مباشر';
+      }
+    } else {
+      // Force English/ASL and hide dropdowns
+      const langSelect1 = document.getElementById('cam-language-select');
+      const langSelect2 = document.getElementById('s2sp-cam-language-select');
+      if (langSelect1) {
+        langSelect1.value = 'english';
+        langSelect1.style.display = 'none';
+      }
+      if (langSelect2) {
+        langSelect2.value = 'english';
+        langSelect2.style.display = 'none';
+      }
+    }
+  }
+
+  applyLocalization();
+
+  // ═══════════════════════════════════════════════════════════
+  // MODULE SWITCHING
+  // ═══════════════════════════════════════════════════════════
+
+
+
+  function showModule(key) {
+    if (!moduleMap[key]) return;
+    if (cameraOn) stopCamera();
+    if (s2spCameraOn) stopS2SpCamera();
+    if (meetingCamOn) stopMeetingCamera();
+    // Reset all shared inference + gloss state on every module switch
+    resetInferenceState();
+
+    const prev = moduleMap[currentModule];
+    const next = moduleMap[key];
+    document.getElementById(prev.panel).classList.remove('active');
+    document.getElementById(prev.nav).classList.remove('active');
+    document.getElementById(next.panel).classList.add('active');
+    document.getElementById(next.nav).classList.add('active');
+    document.getElementById('topbar-title').textContent = next.title;
+
+    const mobileSel = document.getElementById('mobile-module-select');
+    if (mobileSel) mobileSel.value = key;
+
+    // Sync mobile bottom nav active state
+    const mobNavMap = {
+      overview: null,
+      vision: 'mob-nav-vision', speech: 'mob-nav-speech',
+      text2sign: 'mob-nav-text2sign', speech2sign: 'mob-nav-speech2sign',
+      meeting: 'mob-nav-meeting'
+    };
+    Object.values(mobNavMap).forEach(id => {
+      if (!id) return;
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('active');
+    });
+    const activeEl = mobNavMap[key] ? document.getElementById(mobNavMap[key]) : null;
+    if (activeEl) activeEl.classList.add('active');
+
+    currentModule = key;
+    renderMobileQuickActions();
+  }
+
+  function switchModule(event, key) {
+    if (event) event.preventDefault();
+    showModule(key);
+  }
+
+  /** Reset all inference voting + gloss state to a clean slate. */
+  function resetInferenceState() {
+    voteBuffer = [];
+    consecutiveHand = 0;
+    handGapCounter = 0;
+    globalCooldown = 0;
+    lastPredWord = null;
+    inferenceRunning = false;
+    frameBuffer = [];
+    lastAccepted = null;
+    sameSignCount = 0;
+    clearTimeout(glossTimer);
+    glossTimer = null;
+    // Don't clear glossBuffer here — stopCamera handles it
+  }
+
+  const statusTranslations = {
+    'Ready': 'جاهز',
+    'AI Ready': 'الذكاء الاصطناعي جاهز',
+    'Preparing AI…': 'جاري تحضير الذكاء الاصطناعي...',
+    'Initializing...': 'جاري التهيئة...',
+    'Camera Live': 'الكاميرا مباشرة',
+    'Secure context required': 'مطلوب اتصال آمن',
+    'Speech API not supported': 'واجهة الكلام غير مدعومة',
+    'Mic permission denied': 'تم رفض إذن الميكروفون',
+    'Mic blocked': 'الميكروفون محجوب',
+    'Mic unavailable': 'الميكروفون غير متوفر',
+    'Camera unavailable': 'الكاميرا غير متوفرة',
+    'Camera Error': 'خطأ في الكاميرا',
+    'Library Error': 'خطأ في المكتبة',
+    'Mic Active': 'الميكروفون نشط',
+    'Animating…': 'تمثيل الإشارة...',
+    'Auth error': 'خطأ في التحقق',
+    'Session expired. Please log in again.': 'انتهت الجلسة. يرجى تسجيل الدخول مرة أخرى.',
+    'Join meeting first': 'انضم إلى الاجتماع أولاً',
+    'Message sent': 'تم إرسال الرسالة',
+    'Sign input active': 'مدخل الإشارة نشط',
+    'Sign input off': 'إيقاف مدخل الإشارة',
+    'Meeting camera on': 'كاميرا الاجتماع تعمل',
+    'Meeting camera off': 'إيقاف كاميرا الاجتماع',
+    'Meeting link copied': 'تم نسخ رابط الاجتماع',
+    'Unable to copy link': 'غير قادر على نسخ الرابط',
+    'Meeting connection failed': 'فشل اتصال الاجتماع',
+    'Looking up signs…': 'جاري البحث عن الإشارات...',
+  };
+
+  function setStatus(text, live = false) {
+    let displayText = text;
+    if (forcedLang === 'ar') {
+      if (statusTranslations[text]) {
+        displayText = statusTranslations[text];
+      } else if (text.startsWith('AI Ready · ')) {
+        const match = text.match(/\d+/);
+        const signsCount = match ? match[0] : '0';
+        displayText = `الذكاء الاصطناعي جاهز · ${signsCount} إشارة`;
+      } else if (text.startsWith('DB Ready · ')) {
+        const match = text.match(/\d+/);
+        const signsCount = match ? match[0] : '0';
+        displayText = `قاعدة البيانات جاهزة · ${signsCount} إشارة`;
+      } else if (text.startsWith('Meeting: ')) {
+        displayText = `اجتماع: ${text.replace('Meeting: ', '')}`;
+      }
+    }
+    document.getElementById('status-text').textContent = displayText;
+    document.getElementById('status-dot').classList.toggle('live', live);
+    // Phase 6 UI polish: reflect state on the redesigned pill + camera warmup overlay
+    const _sp = document.getElementById('status-pill');
+    if (_sp) _sp.setAttribute('data-state', live ? 'live' : 'idle');
+    const _warming = (text === 'Initializing...');
+    ['cam-loading', 's2sp-loading'].forEach(function (id) {
+      const _l = document.getElementById(id);
+      if (_l) _l.classList.toggle('is-on', _warming);
+    });
+  }
+
+  function isTrustedLocalhost() {
+    const h = (window.location.hostname || '').toLowerCase();
+    return h === 'localhost' || h === '127.0.0.1' || h === '::1';
+  }
+
+  function ensureMediaApi(kind) {
+    const secureOk = window.isSecureContext || isTrustedLocalhost();
+    if (!secureOk) {
+      const msg = `${kind} needs HTTPS on mobile. Open the site with https:// or localhost.`;
+      setStatus('Secure context required', false);
+      return { ok: false, message: msg };
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const msg = `${kind} is not available in this browser.`;
+      setStatus(`${kind} unavailable`, false);
+      return { ok: false, message: msg };
+    }
+    return { ok: true, message: '' };
+  }
+
+  let mobileQuickActions = {
+    primary: { label: 'Action', kind: 'primary', handler: null },
+    secondary: { label: 'Action', kind: 'secondary', handler: null },
+  };
+
+  function setMobileQuickAction(key, label, kind, handler) {
+    mobileQuickActions[key] = { label, kind, handler };
+  }
+
+  function renderMobileQuickActions() {
+    const wrap = document.getElementById('mobile-quick-actions');
+    const p = document.getElementById('mqa-primary');
+    const s = document.getElementById('mqa-secondary');
+    if (!wrap || !p || !s) return;
+
+    if (currentModule === 'vision') {
+      setMobileQuickAction('primary', cameraOn ? (forcedLang === 'ar' ? 'إيقاف الكاميرا' : 'Stop Camera') : (forcedLang === 'ar' ? 'تشغيل الكاميرا' : 'Start Camera'), 'primary', toggleCamera);
+      if (forcedLang === 'ar') {
+        setMobileQuickAction('secondary', '', 'secondary', null);
+      } else {
+        setMobileQuickAction('secondary', 'Compose Sentence', 'secondary', triggerSentenceTranslation);
+      }
+    } else if (currentModule === 'speech') {
+      setMobileQuickAction('primary', s2spCameraOn ? (forcedLang === 'ar' ? 'إيقاف الكاميرا' : 'Stop Camera') : (forcedLang === 'ar' ? 'تشغيل الكاميرا' : 'Start Camera'), 'primary', toggleS2SpCamera);
+      if (forcedLang === 'ar') {
+        setMobileQuickAction('secondary', '', 'secondary', null);
+      } else {
+        setMobileQuickAction('secondary', 'Compose Sentence', 'secondary', s2spTriggerSentence);
+      }
+    } else if (currentModule === 'text2sign') {
+      setMobileQuickAction('primary', forcedLang === 'ar' ? 'إرسال النص' : 'Send Text', 'primary', sendText2Sign);
+      setMobileQuickAction('secondary', forcedLang === 'ar' ? 'تركيز الإدخال' : 'Focus Input', 'secondary', () => {
+        const input = document.getElementById('text2sign-input');
+        if (input) input.focus();
+      });
+    } else if (currentModule === 'speech2sign') {
+      setMobileQuickAction('primary', micOn ? (forcedLang === 'ar' ? 'إيقاف الاستماع' : 'Stop Listening') : (forcedLang === 'ar' ? 'بدء الاستماع' : 'Start Listening'), 'primary', toggleMic);
+      setMobileQuickAction('secondary', forcedLang === 'ar' ? 'فتح الاجتماع' : 'Open Meeting', 'secondary', () => showModule('meeting'));
+    } else if (currentModule === 'meeting') {
+      setMobileQuickAction('primary', inMeeting ? (forcedLang === 'ar' ? 'مغادرة الاجتماع' : 'Leave Meeting') : (forcedLang === 'ar' ? 'الانضمام للاجتماع' : 'Join Meeting'), 'primary', inMeeting ? leaveMeeting : joinMeeting);
+      setMobileQuickAction('secondary', meetingMicOn ? (forcedLang === 'ar' ? 'إيقاف الميكروفون' : 'Mic Off') : (forcedLang === 'ar' ? 'تشغيل الميكروفون' : 'Mic On'), 'secondary', toggleMeetingMic);
+    }
+
+    p.textContent = mobileQuickActions.primary.label;
+    if (mobileQuickActions.secondary.label) {
+      s.textContent = mobileQuickActions.secondary.label;
+      s.style.display = 'inline-flex';
+    } else {
+      s.style.display = 'none';
+    }
+    p.className = mobileQuickActions.primary.kind === 'secondary' ? 'btn btn-secondary' : 'btn btn-primary';
+    s.className = mobileQuickActions.secondary.kind === 'primary' ? 'btn btn-primary' : 'btn btn-secondary';
+  }
+
+  function runMobileQuickAction(which) {
+    const action = mobileQuickActions[which];
+    if (action && typeof action.handler === 'function') action.handler();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // ── FEATURES 1 & 2: SIGN-TO-TEXT / SIGN-TO-SPEECH ──────────
+  // Shared MediaPipe pipeline. Feature 1 shows text.
+  // Feature 2 = Feature 1 + LLM sentence + browser TTS.
+  // ═══════════════════════════════════════════════════════════
+
+
+  function toggleCamera() { cameraOn ? stopCamera() : startCamera(); }
+
+  function startCamera() {
+    if (cameraOn) return; // If the switch is already flipped, stop here!
+    cameraOn = true;
+    console.log("[Camera] Starting Sign-to-Text camera...");
+    const video = (inMeeting && meetingCamStream)
+      ? document.getElementById('meeting-local-video')
+      : document.getElementById('webcam');
+    const canvas = document.getElementById('output_canvas');
+    const placeholder = document.getElementById('cam-placeholder');
+    const badge = document.getElementById('live-badge');
+    const btn = document.getElementById('cam-btn');
+
+    setStatus('Initializing...', false);
+
+    const mediaCheck = ensureMediaApi('Camera');
+    if (!mediaCheck.ok) {
+      cameraOn = false;
+      alert(mediaCheck.message);
+      renderMobileQuickActions();
+      return;
+    }
+
+    const handleStream = (stream) => {
+      console.log("[Camera] Stream acquired.");
+      if (!cameraOn) {
+        if (!(inMeeting && meetingCamStream && stream === meetingCamStream)) {
+          stream.getTracks().forEach(t => t.stop());
+        }
+        return;
+      }
+      video.srcObject = stream;
+      
+      if (!(inMeeting && meetingCamStream)) {
+        video.style.display = 'block';
+        canvas.style.display = 'block';
+        placeholder.style.display = 'none';
+        badge.style.display = 'block';
+        btn.textContent = forcedLang === 'ar' ? '\u0625\u064a\u0642\u0627\u0641 \u0627\u0644\u0643\u0627\u0645\u064a\u0631\u0627' : 'Stop Camera';
+        btn.classList.add('on');
+      }
+      
+      cameraOn = true;
+      setStatus('Camera Live', true);
+      renderMobileQuickActions();
+
+      // ── Init MediaPipe Holistic ──────────────────────────────
+      if (!window.Holistic) {
+        console.error("[Camera] MediaPipe Holistic library not loaded from CDN.");
+        setStatus('Library Error', false);
+        return;
+      }
+
+      // 1. ADD THIS WRAPPER
+      if (!holistic) {
+        holistic = new Holistic({
+          locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/${file}`
+        });
+
+        holistic.setOptions({
+          modelComplexity: 1,
+          smoothLandmarks: true,
+          minDetectionConfidence: 0.7,  // matches sign-to-text.py
+          minTrackingConfidence: 0.7,   // matches sign-to-text.py
+        });
+
+        holistic.onResults(onHolisticResults);
+      }
+
+      if (inMeeting && meetingCamStream && stream === meetingCamStream) {
+        console.log("[Camera] Reusing meeting stream frame loop...");
+        const runFrame = async () => {
+          if (!cameraOn || !inMeeting) return;
+          if (video.readyState >= 2 && holistic) {
+            try {
+              await holistic.send({ image: video });
+            } catch (e) {
+              console.error("[Camera] Holistic send frame error:", e);
+            }
+          }
+          requestAnimationFrame(runFrame);
+        };
+        requestAnimationFrame(runFrame);
+      } else {
+        console.log("[Camera] Initializing MediaPipe Camera helper...");
+        if (!window.Camera) {
+          console.error("[Camera] MediaPipe Camera helper not loaded.");
+          setStatus('Library Error', false);
+          return;
+        }
+
+        mpCamera = new window.Camera(video, {
+          onFrame: async () => {
+            if (holistic) await holistic.send({ image: video });
+          },
+          width: 640, height: 480,
+        });
+        mpCamera.start().then(() => console.log("[Camera] MediaPipe Camera started."));
+      }
+
+    };
+
+    if (inMeeting && meetingCamStream) {
+      handleStream(meetingCamStream);
+    } else {
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(handleStream)
+        .catch(err => {
+          console.error("[Camera] Error:", err);
+          cameraOn = false;
+          setStatus('Camera Error', false);
+          renderMobileQuickActions();
+          alert(`Camera access failed: ${err.name || err.message || err}. Please check permissions.`);
+        });
+    }
+  }
+
+  function stopCamera() {
+    if (!cameraOn) return;
+
+    // 1. Unplug the Camera Helper
+    if (mpCamera) {
+      mpCamera.stop();
+      mpCamera = null;
+    }
+
+    // DO NOT kill holistic here! Let the WASM engine sleep in the background.
+    // if (holistic) { holistic.close(); holistic = null; } <-- DELETED
+
+    // 2. Kill the Video Stream
+    const video = (inMeeting && meetingCamStream)
+      ? document.getElementById('meeting-local-video')
+      : document.getElementById('webcam');
+      
+    if (video && video.srcObject) {
+      if (!(inMeeting && meetingCamStream && video.srcObject === meetingCamStream)) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+        video.srcObject = null;
+      }
+    }
+
+    // 3. Reset UI Elements
+    if (!(inMeeting && meetingCamStream)) {
+      if (video) video.style.display = 'none';
+      document.getElementById('output_canvas').style.display = 'none';
+      document.getElementById('live-badge').style.display = 'none';
+      document.getElementById('cam-placeholder').style.display = 'flex';
+
+      const btn = document.getElementById('cam-btn');
+      if (btn) {
+        btn.textContent = forcedLang === 'ar' ? '\u062a\u0634\u063a\u064a\u0644 \u0627\u0644\u0643\u0627\u0645\u064a\u0631\u0627' : 'Start Camera';
+        btn.classList.remove('on');
+      }
+    }
+
+    // 4. Reset ALL inference + gloss state
+    cameraOn = false;
+    resetInferenceState();
+    // Cancel any pending gloss timer and clear buffer
+    clearTimeout(glossTimer);
+    glossTimer = null;
+    glossBuffer = [];
+
+    setStatus('Ready', false);
+    renderMobileQuickActions();
+  }
+
+  // ── Voting state (mirrors sign-to-text.py exactly) ──────────
+  // Script constants:
+  //   VOTE_BUFFER_SIZE = 15   STABILITY_FRAMES = 7
+  //   GLOBAL_COOLDOWN_FRAMES = 30   MIN_HAND_FRAMES = 8
+  // wait for 30 frames of context before inference
+  // rolling window of landmark frames
+
+  function onHolisticResults(results) {
+    // Mirror video onto overlay canvas
+    const canvas = document.getElementById('output_canvas');
+    canvas.width = results.image.width;
+    canvas.height = results.image.height;
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    // Draw MediaPipe skeleton overlay
+    if (window.drawConnectors && window.HAND_CONNECTIONS) {
+      if (results.leftHandLandmarks)
+        drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: '#00ffff', lineWidth: 2 });
+      if (results.rightHandLandmarks)
+        drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: '#ff00ff', lineWidth: 2 });
+    }
+
+    const handsPresent = !!(results.leftHandLandmarks || results.rightHandLandmarks);
+
+    if (handsPresent) {
+      consecutiveHand++;
+      handGapCounter = 0;
+      lastSignTime = Date.now();
+    } else {
+      handGapCounter++;
+      if (handGapCounter > MAX_HAND_GAP_FRAMES) {
+        // Truly gone: mirror script's sequence.clear() + vote_buffer.clear() on gap
+        consecutiveHand = 0;
+        handGapCounter = 0;
+        frameBuffer = [];     // clear sequence so stale frames don't bleed
+        voteBuffer = [];      // ONLY clear votes on true gap (not just every missed frame)
+        lastPredWord = null;  // allow same sign again after silence (mirrors script)
+        // (Automatic sentence translation removed: user triggers it via Enter/Button)
+      }
+    }
+
+    // Tick down cooldown every frame (mirrors script's per-frame decrement)
+    if (globalCooldown > 0) { globalCooldown--; }
+
+    // Bail out if camera was stopped mid-callback
+    if (!cameraOn) return;
+
+    // Skip inference during cooldown or before enough hand frames
+    if (globalCooldown > 0 || consecutiveHand < MIN_HAND_FRAMES) return;
+
+    // Always append frame to sequence (mirrors extract_landmarks every frame)
+    const frame = buildLandmarkFrame(results);
+    frameBuffer.push(frame);
+    if (frameBuffer.length > SEQ_LENGTH) frameBuffer.shift();
+
+    // Need at least MIN_SEQ_FRAMES before we send, and don't overlap requests
+    if (inferenceRunning || frameBuffer.length < MIN_SEQ_FRAMES) return;
+
+    sendOneFrame([...frameBuffer]);
+  }
+
+  function buildLandmarkFrame(results) {
+    // Order MUST match training extract_landmarks():
+    //   face(468) + leftHand(21) + pose(33) + rightHand(21) = 543
+    const out = [];
+    function addPts(pts, n) {
+      for (let i = 0; i < n; i++) {
+        if (pts && pts[i]) {
+          out.push([pts[i].x, pts[i].y, pts[i].z || 0]);
+        } else {
+          // Send null so it becomes NaN in Python, instead of 0.0
+          // (0.0 forces the model to think the hand is at the top-left corner!)
+          out.push([null, null, null]);
+        }
+      }
+    }
+    addPts(results.faceLandmarks, 468);  // face first
+    addPts(results.leftHandLandmarks, 21);  // then left hand
+    addPts(results.poseLandmarks, 33);  // then pose
+    addPts(results.rightHandLandmarks, 21);  // then right hand
+    return out; // shape [543, 3]
+  }
+
+  function preparePayload(frames, language) {
+    if (language === 'arabic') {
+      // Slice only the 59 landmarks used by the Arabic model:
+      // Left hand (indices 468 to 488), Pose upper (489 to 505), Right hand (522 to 542)
+      return frames.map(f => {
+        const lh = f.slice(468, 489);
+        const pose = f.slice(489, 506);
+        const rh = f.slice(522, 543);
+        return lh.concat(pose, rh);
+      });
+    }
+    return frames;
+  }
+
+  // ── Send rolling window to server, handle result in-browser ──
+  // Mirrors sign-to-text.py's voting + acceptance logic exactly.
+  async function sendOneFrame(frames) {
+    inferenceRunning = true;
+    try {
+      const langSelect = document.getElementById('cam-language-select');
+      const language = langSelect ? langSelect.value : 'english';
+      const videoEl = (inMeeting && meetingCamStream)
+        ? document.getElementById('meeting-local-video')
+        : document.getElementById('webcam');
+      const w = videoEl ? (videoEl.videoWidth || 640) : 640;
+      const h = videoEl ? (videoEl.videoHeight || 480) : 480;
+
+      const payloadFrames = preparePayload(frames, language);
+      const res = await authFetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frames: payloadFrames, language, w, h }),
+      });
+      if (!res.ok) { inferenceRunning = false; return; }
+      const data = await res.json();
+
+      // Discard result if camera was stopped while request was in flight
+      if (!cameraOn) { inferenceRunning = false; return; }
+
+      if (data.text && data.confidence > 0) {
+        // Accumulate into vote buffer (deque maxlen=VOTE_BUFFER_SIZE in script)
+        voteBuffer.push(data.text);
+        if (voteBuffer.length > VOTE_BUFFER_SIZE) voteBuffer.shift();
+
+        if (voteBuffer.length >= VOTE_BUFFER_SIZE) {
+          // Majority vote — mirrors Counter(vote_buffer).most_common(1)
+          const counts = {};
+          for (const w of voteBuffer) counts[w] = (counts[w] || 0) + 1;
+          const winner = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+          const count = counts[winner];
+
+          if (count >= STABILITY_FRAMES && winner !== lastPredWord) {
+            // Sign accepted — mirror script:
+            // vote_buffer.clear() + sequence.clear() + global_cooldown + last_predicted_word = winner
+            lastPredWord = winner;
+            voteBuffer = [];            // vote_buffer.clear()
+            frameBuffer = [];           // sequence.clear() — flush stale frames
+            globalCooldown = GLOBAL_COOLDOWN_FRM;
+            handleDetectedSign(winner, count / VOTE_BUFFER_SIZE);
+          }
+        }
+      }
+      // If confidence < threshold: script does stability_counter -= 1 (we just let voteBuffer age out)
+    } catch (err) {
+      console.error("[Inference Error]", err);
+    }
+    inferenceRunning = false;
+  }
+
+  function updateDebug(msg) { /* debug disabled */ }
+
+
+  // ── Handle a freshly detected sign word ─────────────────────
+  function handleDetectedSign(word, conf) {
+    if (!cameraOn) return; // guard: camera was stopped mid-flight
+    // Deduplicate: skip if the same sign keeps repeating
+    if (word === lastAccepted) {
+      sameSignCount++;
+      if (sameSignCount < SAME_SIGN_REPEAT) return;
+      sameSignCount = 0; // allow adding it again after the repeat threshold
+    } else {
+      sameSignCount = 0;
+      lastAccepted = word;
+    }
+
+    if (forcedLang === 'ar') {
+      // Clear buffer so we don't accumulate multiple words
+      glossBuffer = [];
+      lastSignTime = Date.now();
+
+      if (window.arClearTimeout) {
+        clearTimeout(window.arClearTimeout);
+      }
+
+      // Show the current detected word immediately
+      updateTranscription(word, true);
+      // playLocalTts(word, 'arabic'); // Disabled TTS in Sign-to-Text feature
+
+      // Add to session log
+      signs.push({ text: word, time: new Date().toLocaleTimeString() });
+      updateLog();
+
+      // Clear the transcription output box after 2 seconds
+      window.arClearTimeout = setTimeout(() => {
+        updateTranscription('');
+      }, 2000);
+    } else {
+      // Accumulate for sentence
+      glossBuffer.push(word);
+      lastSignTime = Date.now();
+      // Update live transcription box with ALL accumulated words
+      updateTranscription(glossBuffer.join(' '));
+    }
+
+    // Broadcast to Live Meeting room if connected
+    if (inMeeting && socket) {
+      const roomId = currentMeetingRoom || document.getElementById('meeting-room-id').value.trim() || 'general';
+      renderMeetingSentence(word, userRole, true);
+      socket.emit('translate_sentence', {
+        text: word,
+        room: roomId,
+        mode: 'sign_word',
+        senderRole: userRole,
+      });
+    }
+  }
+
+  async function playLocalTts(text, language) {
+    if ('speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const utt = new SpeechSynthesisUtterance(text);
+        if (language === 'arabic') {
+          const voices = window.speechSynthesis.getVoices();
+          const arVoice = voices.find(v => v.lang.startsWith('ar-EG') || v.lang.startsWith('ar'));
+          if (arVoice) {
+            utt.voice = arVoice;
+          } else {
+            utt.lang = 'ar-EG';
+          }
+        } else {
+          utt.lang = 'en-US';
+        }
+        utt.rate = 1.0;
+        utt.volume = 1.0;
+        window.speechSynthesis.speak(utt);
+        return;
+      } catch (e) {
+        console.warn("[SpeechSynthesis Error, falling back to backend]", e);
+      }
+    }
+
+    try {
+      const url = `/api/tts?text=${encodeURIComponent(text)}&language=${encodeURIComponent(language)}`;
+      const res = await authFetch(url);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = new Audio(audioUrl);
+      audio.play();
+    } catch (err) {
+      console.error("[TTS Error]", err);
+    }
+  }
+
+  async function triggerSentenceTranslation() {
+    if (glossBuffer.length === 0) return;
+    const gloss = [...glossBuffer];
+    glossBuffer = []; // Clear buffer immediately after sending
+    const isArabicMode = forcedLang === 'ar';
+
+    // Show loading indicator
+    updateTranscription(isArabicMode ? `جاري تكوين الجملة: ${gloss.join(' ')}...` : `Forming sentence: ${gloss.join(' ')}...`);
+
+    try {
+      const res = await authFetch('/api/translate/sentence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gloss, language: forcedLang }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const sentence = data.sentence || (isArabicMode ? 'تعذر إنشاء الترجمة العربية' : gloss.join(' '));
+
+      // Show sentence in transcription box
+      updateTranscription(sentence, true);
+
+      if (inMeeting && socket) {
+        const roomId = currentMeetingRoom || document.getElementById('meeting-room-id').value.trim() || 'general';
+        renderMeetingSentence(sentence, userRole, true);
+        socket.emit('translate_sentence', {
+          text: sentence,
+          room: roomId,
+          mode: 'sign_sentence',
+          senderRole: userRole,
+        });
+      }
+
+      // TTS is disabled in the Sign to Text feature (Feature 1) as requested.
+    } catch (_) { }
+  }
+
+  function updateTranscription(text, isSentence = false) {
+    const el = document.getElementById('transcription-output');
+    const color = isSentence ? 'var(--black)' : '#555';
+    el.innerHTML = text
+      ? `<span style="color:${color}">${text}</span>`
+      : '<span class="transcription-placeholder">Waiting for input…</span>';
+
+    if (text && !isSentence) {
+      signs.push({ text, time: new Date().toLocaleTimeString() });
+      updateLog();
+    }
+  }
+
+  function updateLog() {
+    const log = document.getElementById('session-log');
+    if (signs.length === 0) {
+      log.innerHTML = '<p style="font-size:12px;color:var(--gray-400);">No signs detected yet.</p>';
+      return;
+    }
+    log.innerHTML = signs.slice(-20).reverse().map(s =>
+      `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;">
+      <span style="font-size:13px;font-weight:600;">${s.text}</span>
+      <span style="font-size:10px;color:var(--gray-400);">${s.time}</span>
+    </div>`
+    ).join('');
+  }
+
+  function clearTranscription() {
+    signs = [];
+    glossBuffer = [];
+    clearTimeout(glossTimer);
+    glossTimer = null;
+    // Also clear all voting state so old votes don't leak into new session
+    voteBuffer = [];
+    lastPredWord = null;
+    lastAccepted = null;
+    sameSignCount = 0;
+    updateTranscription('');
+    updateLog();
+  }
+
+  function toggleTTS() {
+    ttsOn = !ttsOn;
+    const btn = document.getElementById('tts-btn');
+    btn.textContent = ttsOn ? 'Audio On' : 'Muted';
+    btn.classList.toggle('on', ttsOn);
+  }
+
+
+  // ═══════════════════════════════════════════════════════════
+  // ── FEATURE 3: TEXT-TO-SIGN ─────────────────────────────────
+  // User types text → API returns per-word landmarks →
+  // play each word's landmark frames on avatar_canvas.
+  // ═══════════════════════════════════════════════════════════
+  const t2sHistory = [];
+  let avatarPlaying = false;
+
+  // Avatar canvas setup
+  const avatarCanvas = document.getElementById('avatar_canvas');
+  avatarCanvas.width = 600;
+  avatarCanvas.height = 450;
+  const avatarCtx = avatarCanvas.getContext('2d');
+  drawAuraAvatar(avatarCtx, null, avatarCanvas.width, avatarCanvas.height);
+
+  function normalizeSignWords(text) {
+    const normalized = [];
+    const tokens = text.toLowerCase().replace(/[^a-z0-9' ]/g, '').split(/\s+/).filter(Boolean);
+    for (const token of tokens) {
+      const compact = token.replace(/'/g, '');
+      if (compact === 'im') {
+        normalized.push('i', 'am');
+      } else {
+        normalized.push(compact);
+      }
+    }
+    return normalized;
+  }
+
+  // Convert a natural sentence into sign-gloss tokens via /api/gloss (LLM,
+  // Topic-Comment ordering). Returns null on any failure so the caller can
+  // gracefully fall back to naive word tokenization — zero regression risk.
+  async function sentenceToGlossWords(sentence, language) {
+    try {
+      const res = await authFetch('/api/gloss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sentence: sentence, language: language }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const gloss = Array.isArray(data.gloss) ? data.gloss : [];
+      return gloss.length ? gloss : null;
+    } catch (e) {
+      console.warn('[Text-to-Sign] gloss unavailable, using raw words:', e);
+      return null;
+    }
+  }
+
+  async function sendText2Sign() {
+    const input = document.getElementById('text2sign-input');
+    const text = input.value.trim();
+    if (!text || avatarPlaying) return;
+    input.value = '';
+
+    t2sHistory.unshift({ text, time: new Date().toLocaleTimeString() });
+    renderT2SHistory();
+    setStatus('Looking up signs…', true);
+
+    // Prefer LLM gloss (ASL Topic-Comment); fall back to naive word lookup.
+    let words = await sentenceToGlossWords(text, 'english');
+    if (!words || words.length === 0) words = normalizeSignWords(text);
+    if (words.length === 0) return;
+
+    try {
+      const res = await authFetch('/api/signs/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ words }),
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setStatus('Auth Error — please log in again', false);
+        return;
+      }
+      if (res.status === 503) {
+        setStatus('Sign DB not ready — server still loading', false);
+        return;
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setStatus(`API Error: ${err.detail || res.status}`, false);
+        return;
+      }
+
+      const data = await res.json();
+
+      if (data.found.length === 0) {
+        setStatus(`No signs found for: "${text}"`, false);
+        document.getElementById('avatar-placeholder').style.display = 'flex';
+        return;
+      }
+
+      document.getElementById('avatar-placeholder').style.display = 'none';
+      const missing = data.missing.length > 0 ? ` (⚠️ skipped: ${data.missing.join(', ')})` : '';
+      setStatus(`Signing: ${text}${missing}`, true);
+      await playLandmarkSequence(data.found, avatarCanvas, avatarCtx);
+      setStatus('Done', false);
+
+    } catch (e) {
+      setStatus(`Error: ${e.message}`, false);
+      console.error('[Text-to-Sign]', e);
+    }
+  }
+
+  // Play an array of {word, landmarks} objects on a canvas sequentially
+  async function playLandmarkSequence(wordItems, canvas, ctx) {
+    avatarPlaying = true;
+    let lastFlat = null;
+    let lastWord = '';
+
+    for (const item of wordItems) {
+      const lms = item.landmarks;  // [N_frames, 1662] flat per frame
+      const n = item.frame_count || lms.length;
+      lastWord = item.word;
+
+      for (let f = 0; f < n; f++) {
+        const flat = flattenLandmarkFrame(lms[f]);
+        lastFlat = flat;
+
+        // Draw skeleton (clears canvas internally)
+        drawAuraAvatar(ctx, flat, canvas.width, canvas.height);
+
+        // Overlay: word label + progress bar (isolated from skeleton fillStyle)
+        ctx.save();
+        ctx.font = 'bold 20px Inter, system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.fillText(item.word.toUpperCase(), 20, 34);
+
+        // Subtle progress bar at bottom
+        ctx.fillStyle = 'rgba(0,255,255,0.5)';
+        ctx.fillRect(0, canvas.height - 4, (f / n) * canvas.width, 4);
+        ctx.restore();
+
+        await sleep(25); // ~40 fps
+      }
+
+      await sleep(350); // brief pause between words
+    }
+
+    // Hold the last frame — redraw skeleton + "Done" label
+    if (lastFlat) {
+      drawAuraAvatar(ctx, lastFlat, canvas.width, canvas.height);
+      ctx.save();
+      ctx.font = 'bold 20px Inter, system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillText(lastWord.toUpperCase(), 20, 34);
+      ctx.restore();
+    }
+
+    avatarPlaying = false;
+  }
+
+
+  // If landmarks[f] is already a flat array, pass through; if nested [[x,y,z],...] flatten it
+  function flattenLandmarkFrame(frame) {
+    if (!frame) return null;
+    if (typeof frame[0] === 'number') return frame; // already flat
+    // frame is [[x,y,z], [x,y,z], ...]
+    return frame.flat();
+  }
+
+  function renderT2SHistory() {
+    const el = document.getElementById('t2s-history');
+    if (t2sHistory.length === 0) {
+      el.innerHTML = '<p style="font-size:12px;color:var(--gray-400);">No translations yet.</p>';
+      return;
+    }
+    el.innerHTML = t2sHistory.map(h =>
+      `<div style="padding:10px 14px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;">
+      <div style="font-size:13px;font-weight:600;">${h.text}</div>
+      <div style="font-size:10px;color:var(--gray-400);margin-top:4px;">${h.time}</div>
+    </div>`
+    ).join('');
+  }
+
+
+  // ═══════════════════════════════════════════════════════════
+  // ── FEATURE 4: SPEECH-TO-SIGN ───────────────────────────────
+  // Mic → Web Speech API → text → /api/signs/batch → avatar
+  // ═══════════════════════════════════════════════════════════
+  let micOn = false;
+  let recognition = null;
+  let micRestartTimer = null;
+  let currentMeetingRoom = 'general';
+  let pendingSpeechText = '';
+
+  // Second avatar canvas for Speech-to-Sign panel
+  const s2sCanvas = document.getElementById('s2s-avatar-canvas');
+  s2sCanvas.width = 500;
+  s2sCanvas.height = 500;
+  const s2sCtx = s2sCanvas.getContext('2d');
+  drawAuraAvatar(s2sCtx, null, s2sCanvas.width, s2sCanvas.height);
+
+  let s2sPlaying = false;
+
+  let mediaRecorder = null;
+  let audioChunks = [];
+
+  function toggleMic() { micOn ? stopMic() : startMic(); }
+
+  async function startMic() {
+    if (micOn) return;
+    const mediaCheck = ensureMediaApi('Microphone');
+    if (!mediaCheck.ok) {
+      document.getElementById('mic-status').textContent = mediaCheck.message;
+      alert(mediaCheck.message);
+      return;
+    }
+
+    const langSelect = document.getElementById('s2sp-cam-language-select');
+    const selectedLang = langSelect ? langSelect.value : 'english';
+    const useBackendStt = (selectedLang === 'arabic' || selectedLang === 'egyptian');
+
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        if (useBackendStt) {
+          audioChunks = [];
+          mediaRecorder = new MediaRecorder(stream);
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) audioChunks.push(e.data);
+          };
+          mediaRecorder.onstop = async () => {
+            stream.getTracks().forEach(t => t.stop());
+            if (audioChunks.length === 0) return;
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            
+            const el = document.getElementById('speech-output');
+            el.innerHTML = `<span style="color:var(--gray-400)">${forcedLang === 'ar' ? 'جاري التعرف على الكلام...' : 'Transcribing speech...'}</span>`;
+            
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'speech.webm');
+            formData.append('language', selectedLang);
+            
+            try {
+              const res = await authFetch('/api/stt', {
+                method: 'POST',
+                body: formData
+              });
+              if (!res.ok) throw new Error('STT request failed');
+              const data = await res.json();
+              const text = data.text || '';
+              el.innerHTML = `<span>${text}</span>`;
+              if (text.trim()) {
+                setStatus('Animating…', true);
+                await s2sAnimateText(text.trim());
+                setStatus('Ready', false);
+              } else {
+                el.innerHTML = `<span style="color:var(--gray-400)">${forcedLang === 'ar' ? 'لم يتم العثور على كلام. حاول ثانية.' : 'No speech detected. Try again.'}</span>`;
+              }
+            } catch (err) {
+              console.error(err);
+              el.innerHTML = `<span style="color:red">${forcedLang === 'ar' ? 'خطأ في التعرف على الصوت' : 'Transcription error'}</span>`;
+            }
+          };
+          mediaRecorder.start();
+          
+          micOn = true;
+          document.getElementById('mic-icon').textContent = '🔴';
+          document.getElementById('mic-status').textContent = forcedLang === 'ar' ? 'جاري تسجيل الصوت...' : 'Recording audio...';
+          document.getElementById('mic-btn').textContent = forcedLang === 'ar' ? 'إيقاف وإرسال' : 'Stop & Transcribe';
+          document.getElementById('mic-btn').classList.add('on');
+          setStatus('Mic Active', true);
+          renderMobileQuickActions();
+          return;
+        } else {
+          // English path: release microphone stream before starting SpeechRecognition to avoid conflicts
+          stream.getTracks().forEach(t => t.stop());
+        }
+      }
+    } catch (err) {
+      setStatus('Mic permission denied', false);
+      document.getElementById('mic-status').textContent = 'Microphone permission denied.';
+      return;
+    }
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      setStatus('Speech API not supported', false);
+      document.getElementById('mic-status').textContent = 'Speech recognition is not supported in this browser.';
+      return;
+    }
+
+    recognition = new SR();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || 'en-US';
+
+    recognition.onstart = () => {
+      setStatus('Mic Active', true);
+      document.getElementById('mic-status').textContent = forcedLang === 'ar' ? 'جاري الاستماع...' : 'Listening...';
+    };
+
+    recognition.onresult = async (event) => {
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) final += t;
+        else interim += t;
+      }
+
+      const el = document.getElementById('speech-output');
+      if (interim) el.innerHTML = `<span style="color:var(--gray-400)">${interim}</span>`;
+
+      if (final.trim()) {
+        if (s2sPlaying) {
+          pendingSpeechText = final.trim();
+          return;
+        }
+        el.innerHTML = `<span>${final.trim()}</span>`;
+        setStatus('Animating…', true);
+        await s2sAnimateText(final.trim());
+        setStatus('Mic Active', true);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      const code = event?.error || 'unknown';
+      if (code === 'not-allowed' || code === 'service-not-allowed') {
+        stopMic();
+        setStatus('Mic blocked', false);
+        document.getElementById('mic-status').textContent = forcedLang === 'ar' ? 'تم حجب الوصول للميكروفون.' : 'Microphone access blocked by browser.';
+        return;
+      }
+      if (code === 'audio-capture') {
+        setStatus('Mic unavailable', false);
+        document.getElementById('mic-status').textContent = forcedLang === 'ar' ? 'لم يتم العثور على ميكروفون.' : 'No microphone detected.';
+        return;
+      }
+      document.getElementById('mic-status').textContent = forcedLang === 'ar' ? 'جاري الاستماع...' : 'Listening...';
+    };
+
+    recognition.onend = () => {
+      if (micOn) {
+        clearTimeout(micRestartTimer);
+        micRestartTimer = setTimeout(() => {
+          try { recognition && recognition.start(); } catch (_) { }
+        }, 250);
+      }
+    };
+
+    recognition.start();
+
+    micOn = true;
+    document.getElementById('mic-icon').textContent = '🔴';
+    document.getElementById('mic-status').textContent = forcedLang === 'ar' ? 'جاري الاستماع...' : 'Listening...';
+    document.getElementById('mic-btn').textContent = forcedLang === 'ar' ? 'إيقاف' : 'Stop';
+    document.getElementById('mic-btn').classList.add('on');
+    setStatus('Mic Active', true);
+    renderMobileQuickActions();
+  }
+
+  function stopMic() {
+    micOn = false;
+    clearTimeout(micRestartTimer);
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      try { mediaRecorder.stop(); } catch (_) {}
+      mediaRecorder = null;
+    }
+    if (recognition) {
+      try { recognition.onend = null; recognition.stop(); } catch (_) { }
+      recognition = null;
+    }
+    document.getElementById('mic-icon').textContent = '🎙️';
+    document.getElementById('mic-status').textContent = forcedLang === 'ar' ? 'انقر على "بدء الاستماع" للبدء' : 'Click "Start Listening" to begin';
+    document.getElementById('mic-btn').textContent = forcedLang === 'ar' ? 'بدء الاستماع' : 'Start Listening';
+    document.getElementById('mic-btn').classList.remove('on');
+    setStatus('Ready', false);
+    renderMobileQuickActions();
+  }
+
+  async function s2sAnimateText(text) {
+    s2sPlaying = true;
+    const words = normalizeSignWords(text);
+    if (words.length === 0) { s2sPlaying = false; return; }
+
+    try {
+      const res = await authFetch('/api/signs/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ words }),
+      });
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          document.getElementById('mic-status').textContent = 'Session expired. Please log in again.';
+          setStatus('Auth error', false);
+        }
+        s2sPlaying = false;
+        return;
+      }
+      const data = await res.json();
+
+      if (data.found.length > 0) {
+        await playLandmarkSequence(data.found, s2sCanvas, s2sCtx);
+      }
+    } catch (_) { }
+    s2sPlaying = false;
+
+    // If the user kept speaking while avatar was animating,
+    // process the latest pending phrase next.
+    if (pendingSpeechText) {
+      const nextText = pendingSpeechText;
+      pendingSpeechText = '';
+      const el = document.getElementById('speech-output');
+      el.innerHTML = `<span>${nextText}</span>`;
+      setStatus('Animating…', true);
+      await s2sAnimateText(nextText);
+      setStatus('Mic Active', true);
+    }
+  }
+
+
+  // ═══════════════════════════════════════════════════════════
+  // ── FEATURE 5: LIVE MEETING ─────────────────────────────────
+  // Socket.IO room join/leave + translate broadcast
+  // ═══════════════════════════════════════════════════════════
+
+  function initWebRtc(targetSid, isCaller) {
+    // Idempotent: duplicate presence events (presence_announced + presence_reply
+    // + the new_peer re-announce) must NOT tear down a live connection to the
+    // same peer — doing so was dropping the call mid-negotiation and leaving the
+    // remote video blank.
+    if (peerConnection && peerSocketId === targetSid &&
+        peerConnection.signalingState !== 'closed') {
+      console.log("[WebRTC] Connection to", targetSid, "already active — skipping re-init");
+      return;
+    }
+    iceCandidateBuffer = [];
+    if (peerConnection) {
+      console.log("[WebRTC] Closing existing PeerConnection before re-initializing");
+      try { peerConnection.close(); } catch(_) {}
+      peerConnection = null;
+    }
+
+    peerSocketId = targetSid;
+    console.log(`[WebRTC] Initializing PeerConnection for ${targetSid}, isCaller = ${isCaller}`);
+
+    const config = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    };
+
+    peerConnection = new RTCPeerConnection(config);
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate && socket && socket.connected) {
+        socket.emit('webrtc_ice_candidate', {
+          candidate: event.candidate,
+          room: currentMeetingRoom
+        });
+      }
+    };
+
+    peerConnection.ontrack = (event) => {
+      console.log("[WebRTC] Received remote stream/track");
+      const remoteVideo = document.getElementById('remote_video');
+      if (remoteVideo) {
+        if (event.streams && event.streams[0]) {
+          remoteVideo.srcObject = event.streams[0];
+        } else {
+          if (!remoteVideo.srcObject) {
+            remoteVideo.srcObject = new MediaStream();
+          }
+          remoteVideo.srcObject.addTrack(event.track);
+        }
+        remoteVideo.style.display = 'block';
+        const placeholder = document.getElementById('meeting-video-placeholder');
+        if (placeholder) placeholder.style.display = 'none';
+      }
+    };
+
+    if (meetingCamStream) {
+      console.log("[WebRTC] Adding local camera tracks to PeerConnection");
+      meetingCamStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, meetingCamStream);
+      });
+    }
+
+    let offerCreated = false;
+    const makeOffer = async () => {
+      // Only the designated caller offers, and only once — guard against glare
+      // from onnegotiationneeded and the startup timer firing together.
+      if (!isCaller || offerCreated) return;
+      if (peerConnection.signalingState !== 'stable') return;
+      offerCreated = true;
+      try {
+        console.log("[WebRTC] Creating offer...");
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        socket.emit('webrtc_offer', {
+          sdp: offer,
+          room: currentMeetingRoom
+        });
+      } catch (err) {
+        offerCreated = false;
+        console.error("[WebRTC] Offer creation failed:", err);
+      }
+    };
+
+    peerConnection.onnegotiationneeded = makeOffer;
+
+    if (isCaller) {
+      setTimeout(makeOffer, 100);
+    }
+  }
+
+  function generateMeetingRoomId() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let result = '';
+    for (let i = 0; i < 5; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
+  function sanitizeMeetingCode(value) {
+    const normalized = (value || '').toUpperCase().trim();
+    return normalized.replace(/[^A-Z]/g, '').slice(0, 5);
+  }
+
+  function buildMeetingLink(roomId) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', roomId);
+    return url.toString();
+  }
+
+  function getMeetingRoleFlags(role) {
+    const normalized = (role || '').toString().toLowerCase();
+    return {
+      isSpeaker: normalized.includes('speaker'),
+      isDeaf: normalized.includes('deaf') || normalized.includes('hoh') || normalized.includes('hard of hearing'),
+    };
+  }
+
+  function renderMeetingSentence(text, senderRole, localEcho = false) {
+    const sentence = document.getElementById('remote-sentence');
+    const payloadText = (text || '').trim();
+    if (!sentence || !payloadText) return;
+
+    sentence.textContent = payloadText;
+    sentence.style.color = '#111111';
+
+    const overlay = document.getElementById('meeting-subtitle-overlay');
+    if (overlay) {
+      overlay.textContent = payloadText;
+      overlay.style.color = '#ffffff';
+    }
+
+    if (localEcho) return;
+
+    const flags = getMeetingRoleFlags(senderRole);
+    if (isDeafHohUser && flags.isSpeaker) {
+      playMeetingAvatarFromText(payloadText);
+    }
+
+    if (!isDeafHohUser && flags.isDeaf && meetingSpeechOutOn && 'speechSynthesis' in window) {
+      const utt = new SpeechSynthesisUtterance(payloadText);
+      utt.rate = 1.0;
+      utt.volume = 1.0;
+      window.speechSynthesis.speak(utt);
+    }
+  }
+
+  function setMeetingUiState(connected) {
+    const pill = document.getElementById('meeting-status-pill');
+    const leaveBtn = document.getElementById('leave-btn');
+    const copyBtn = document.getElementById('copy-link-btn');
+    const roomLabel = document.getElementById('meeting-current-code');
+    const stageLabel = document.getElementById('meeting-stage-label');
+    const placeholder = document.getElementById('meeting-video-placeholder');
+    const entryRow = document.querySelector('.meet-entry-row');
+
+    if (!pill || !leaveBtn || !copyBtn || !roomLabel || !stageLabel || !placeholder) return;
+
+    if (entryRow) {
+      entryRow.style.display = connected ? 'none' : 'flex';
+    }
+
+    if (connected && currentMeetingRoom) {
+      pill.textContent = 'Connected';
+      pill.classList.add('connected'); pill.removeAttribute('data-state');
+      leaveBtn.style.display = 'inline-flex';
+      copyBtn.disabled = false;
+      roomLabel.textContent = currentMeetingRoom;
+      stageLabel.textContent = `Room ${currentMeetingRoom}`;
+      
+      const remoteVideo = document.getElementById('remote_video');
+      if (remoteVideo && remoteVideo.style.display === 'block') {
+        placeholder.style.display = 'none';
+      } else {
+        placeholder.style.display = 'flex';
+        placeholder.textContent = 'Waiting for peer...';
+      }
+    } else {
+      pill.textContent = 'Not connected';
+      pill.classList.remove('connected'); pill.removeAttribute('data-state');
+      leaveBtn.style.display = 'none';
+      copyBtn.disabled = true;
+      roomLabel.textContent = '-';
+      stageLabel.textContent = 'Waiting to join';
+      placeholder.style.display = 'flex';
+      placeholder.textContent = 'Join a room to start receiving live captions';
+
+      if (!meetingCamOn) {
+        const localVideo = document.getElementById('meeting-local-video');
+        if (localVideo) {
+          localVideo.srcObject = null;
+          localVideo.style.display = 'none';
+        }
+      }
+      const localPlaceholder = document.getElementById('local-video-placeholder');
+      if (localPlaceholder) {
+        localPlaceholder.style.display = 'flex';
+      }
+      const remoteVideo = document.getElementById('remote_video');
+      if (remoteVideo) {
+        remoteVideo.srcObject = null;
+        remoteVideo.style.display = 'none';
+      }
+    }
+  }
+
+  function initMeetingRoleUi() {
+    const composer = document.getElementById('meeting-composer');
+    const camBtn = document.getElementById('meeting-cam-btn');
+    const micBtn = document.getElementById('meeting-mic-btn');
+    const signBtn = document.getElementById('meeting-sign-btn');
+    const speechBtn = document.getElementById('meeting-speech-out-btn');
+    const stage = document.querySelector('.meet-stage');
+    const subtitleOverlay = document.getElementById('meeting-subtitle-overlay');
+    const placeholder = document.getElementById('meeting-video-placeholder');
+
+    if (stage) {
+      if (inMeeting) {
+        if (isDeafHohUser) {
+          stage.classList.add('signer-mode');
+          stage.classList.remove('speaker-mode');
+        } else {
+          stage.classList.add('speaker-mode');
+          stage.classList.remove('signer-mode');
+        }
+      } else {
+        stage.classList.remove('signer-mode', 'speaker-mode');
+      }
+    }
+
+    if (inMeeting) {
+      if (subtitleOverlay) {
+        subtitleOverlay.style.display = 'flex';
+        if (isDeafHohUser) {
+          subtitleOverlay.textContent = forcedLang === 'ar' ? 'بانتظار المتحدث...' : 'Waiting for speaker...';
+        } else {
+          subtitleOverlay.textContent = forcedLang === 'ar' ? 'بانتظار الإشارة...' : 'Waiting for signer...';
+        }
+      }
+      if (placeholder) {
+        const remoteVideo = document.getElementById('remote_video');
+        if (remoteVideo && remoteVideo.style.display === 'block') {
+          placeholder.style.display = 'none';
+        } else {
+          placeholder.style.display = 'flex';
+          placeholder.textContent = forcedLang === 'ar' ? 'بانتظار الطرف الآخر...' : 'Waiting for peer...';
+        }
+      }
+
+      if (isDeafHohUser) {
+        if (camBtn) camBtn.style.display = 'inline-flex';
+        if (micBtn) micBtn.style.display = 'none';
+        if (signBtn) signBtn.style.display = 'none';
+        if (composer) composer.style.display = 'none';
+        if (speechBtn) speechBtn.style.display = 'none';
+      } else {
+        if (camBtn) camBtn.style.display = 'inline-flex';
+        if (micBtn) micBtn.style.display = 'inline-flex';
+        if (signBtn) signBtn.style.display = 'none';
+        if (composer) composer.style.display = 'flex';
+        if (speechBtn) speechBtn.style.display = 'inline-flex';
+        if (speechBtn) {
+          speechBtn.classList.toggle('on', meetingSpeechOutOn);
+          speechBtn.textContent = meetingSpeechOutOn ? '🔊 Read captions' : '🔇 Captions only';
+        }
+
+        const corner = document.getElementById('meeting-avatar-corner');
+        const canvas = document.getElementById('meeting-avatar-canvas');
+        if (corner && canvas) {
+          corner.classList.add('visible');
+          const ctx = canvas.getContext('2d');
+          canvas.width = 440;
+          canvas.height = 320;
+          drawAuraAvatar(ctx, null, canvas.width, canvas.height);
+        }
+      }
+
+      const selfP = document.getElementById('participant-self');
+      const peerP = document.getElementById('participant-peer');
+      if (selfP) {
+        selfP.innerHTML = `<strong>${displayName}</strong> <span style="font-size:10px; opacity:0.75;">(${isDeafHohUser ? 'Signer' : 'Speaker'})</span>`;
+      }
+      if (peerP) {
+        peerP.innerHTML = '<span style="color:var(--gray-400); font-style:italic;">Waiting for peer...</span>';
+      }
+    } else {
+      if (subtitleOverlay) subtitleOverlay.style.display = 'none';
+      if (placeholder) {
+        placeholder.style.display = 'flex';
+        placeholder.textContent = forcedLang === 'ar' ? 'انضم إلى غرفة لتلقي الترجمة المباشرة' : 'Join a room to start receiving live captions';
+      }
+      if (camBtn) camBtn.style.display = 'inline-flex';
+      if (micBtn) micBtn.style.display = 'inline-flex';
+      if (signBtn) signBtn.style.display = 'none';
+      if (composer) composer.style.display = 'none';
+      if (speechBtn) speechBtn.style.display = 'none';
+    }
+  }
+
+  async function playMeetingAvatarFromText(text) {
+    if (!text || meetingAvatarPlaying) return;
+
+    const corner = document.getElementById('meeting-avatar-corner');
+    const canvas = document.getElementById('meeting-avatar-canvas');
+    if (!corner || !canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    canvas.width = 440;
+    canvas.height = 320;
+
+    const words = normalizeSignWords(text);
+    if (words.length === 0) return;
+
+    try {
+      meetingAvatarPlaying = true;
+      corner.classList.add('visible');
+      drawAuraAvatar(ctx, null, canvas.width, canvas.height);
+
+      const res = await authFetch('/api/signs/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ words }),
+      });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (!data.found || data.found.length === 0) return;
+
+      for (const item of data.found) {
+        const lms = item.landmarks || [];
+        const n = item.frame_count || lms.length;
+        for (let f = 0; f < n; f++) {
+          const flat = flattenLandmarkFrame(lms[f]);
+          drawAuraAvatar(ctx, flat, canvas.width, canvas.height);
+          await sleep(25);
+        }
+        await sleep(180);
+      }
+    } catch (_) {
+      // no-op
+    } finally {
+      meetingAvatarPlaying = false;
+    }
+  }
+
+  function toggleMeetingSpeechOut() {
+    meetingSpeechOutOn = !meetingSpeechOutOn;
+    const btn = document.getElementById('meeting-speech-out-btn');
+    btn.classList.toggle('on', meetingSpeechOutOn);
+    btn.textContent = meetingSpeechOutOn ? '🔊 Read captions' : '🔇 Captions only';
+  }
+
+  async function sendMeetingText() {
+    if (!socket || !inMeeting || !socket.connected) {
+      setStatus('Join meeting first', false);
+      return;
+    }
+
+    const input = document.getElementById('meeting-text-input');
+    const text = (input.value || '').trim();
+    if (!text) return;
+    input.value = '';
+
+    socket.emit('translate_sentence', {
+      text,
+      room: currentMeetingRoom,
+      mode: 'speaker_text',
+      senderRole: userRole,
+    });
+    renderMeetingSentence(text, userRole, true);
+    setStatus('Message sent', true);
+  }
+
+  function toggleMeetingSignInput() {
+    if (!inMeeting) {
+      setStatus('Join meeting first', false);
+      return;
+    }
+
+    const btn = document.getElementById('meeting-sign-btn');
+
+    if (!meetingSignInputOn) {
+      startCamera();
+      meetingSignInputOn = true;
+      btn.textContent = '🤟 Sign Input On';
+      btn.classList.add('on');
+      setStatus('Sign input active', true);
+    } else {
+      stopCamera();
+      meetingSignInputOn = false;
+      btn.textContent = '🤟 Sign Input Off';
+      btn.classList.remove('on');
+      setStatus('Sign input off', false);
+    }
+  }
+
+  async function startMeetingCamera() {
+    if (meetingCamOn) return true;
+
+    const videoEl = document.getElementById('meeting-local-video');
+    const camBtn = document.getElementById('meeting-cam-btn');
+    const placeholder = document.getElementById('local-video-placeholder');
+
+    const mediaCheck = ensureMediaApi('Camera');
+    if (!mediaCheck.ok) {
+      setStatus('Camera unavailable', false);
+      return false;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 24, max: 30 }
+        }
+      });
+      meetingCamStream = stream;
+      videoEl.srcObject = stream;
+      videoEl.style.display = 'block';
+      if (placeholder) placeholder.style.display = 'none';
+
+      meetingCamOn = true;
+      camBtn.textContent = '📷 Camera On';
+      camBtn.classList.add('on');
+      setMeetingUiState(inMeeting);
+
+      // If WebRTC peer connection exists, add tracks now
+      if (peerConnection) {
+        meetingCamStream.getTracks().forEach(track => {
+          peerConnection.addTrack(track, meetingCamStream);
+        });
+      }
+
+      return true;
+    } catch (_) {
+      meetingCamOn = false;
+      camBtn.textContent = '📷 Camera Off';
+      camBtn.classList.remove('on');
+      videoEl.style.display = 'none';
+      if (placeholder) placeholder.style.display = 'flex';
+      setStatus('Camera unavailable', false);
+      return false;
+    }
+  }
+
+  function stopMeetingCamera() {
+    const videoEl = document.getElementById('meeting-local-video');
+    const camBtn = document.getElementById('meeting-cam-btn');
+    const placeholder = document.getElementById('local-video-placeholder');
+
+    if (meetingCamStream) {
+      meetingCamStream.getTracks().forEach(t => t.stop());
+      meetingCamStream = null;
+    }
+
+    if (videoEl) {
+      videoEl.srcObject = null;
+      videoEl.style.display = 'none';
+    }
+    if (placeholder) placeholder.style.display = 'flex';
+    meetingCamOn = false;
+    if (camBtn) {
+      camBtn.textContent = '📷 Camera Off';
+      camBtn.classList.remove('on');
+    }
+  }
+
+  async function toggleMeetingCamera() {
+    if (!inMeeting) {
+      setStatus('Join meeting first', false);
+      return;
+    }
+
+    if (meetingCamOn) {
+      stopMeetingCamera();
+      if (isDeafHohUser && meetingSignInputOn) {
+        stopCamera();
+        meetingSignInputOn = false;
+        const signBtn = document.getElementById('meeting-sign-btn');
+        if (signBtn) {
+          signBtn.textContent = '🤟 Sign Input Off';
+          signBtn.classList.remove('on');
+        }
+      }
+      setStatus('Meeting camera off', false);
+      return;
+    }
+
+    const started = await startMeetingCamera();
+    if (started) {
+      if (isDeafHohUser && !meetingSignInputOn) {
+        startCamera();
+        meetingSignInputOn = true;
+        const signBtn = document.getElementById('meeting-sign-btn');
+        if (signBtn) {
+          signBtn.textContent = '🤟 Sign Input On';
+          signBtn.classList.add('on');
+        }
+      }
+      setStatus('Meeting camera on', true);
+    }
+  }
+
+  function initMeetingFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = sanitizeMeetingCode(params.get('room'));
+    if (fromQuery) {
+      document.getElementById('meeting-room-id').value = fromQuery;
+    }
+    setMeetingUiState(false);
+    initMeetingRoleUi();
+  }
+
+  function triggerCreateMeeting() {
+    const roomId = generateMeetingRoomId();
+    const input = document.getElementById('meeting-room-id');
+    if (input) input.value = roomId;
+
+    const modal = document.getElementById('create-meeting-modal');
+    const codeDisplay = document.getElementById('modal-created-code');
+    if (modal && codeDisplay) {
+      codeDisplay.textContent = roomId;
+      modal.style.display = 'flex';
+    }
+    // Do NOT call joinMeeting() here — wait for "Start Meeting" click
+  }
+
+  function triggerJoinMeeting() {
+    const modal = document.getElementById('join-meeting-modal');
+    const codeInput = document.getElementById('modal-meeting-code');
+    if (codeInput) codeInput.value = '';
+    if (modal) modal.style.display = 'flex';
+  }
+
+  function closeJoinModal() {
+    const modal = document.getElementById('join-meeting-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function submitJoinModal() {
+    const codeInput = document.getElementById('modal-meeting-code');
+    const code = sanitizeMeetingCode(codeInput ? codeInput.value : '');
+    if (!code || code.length < 5) {
+      alert('Please enter a valid 5-letter code.');
+      return;
+    }
+    const input = document.getElementById('meeting-room-id');
+    if (input) input.value = code;
+
+    closeJoinModal();
+    joinMeeting();
+  }
+
+  function closeCreateModal() {
+    const modal = document.getElementById('create-meeting-modal');
+    if (modal) modal.style.display = 'none';
+    // Fire the actual meeting join now that user clicked Start Meeting
+    joinMeeting();
+  }
+
+  async function copyCreatedCode() {
+    const codeDisplay = document.getElementById('modal-created-code');
+    if (!codeDisplay) return;
+    const code = codeDisplay.textContent;
+    const link = buildMeetingLink(code);
+    try {
+      await navigator.clipboard.writeText(`Meeting Code: ${code}\nLink: ${link}`);
+      const btn = document.getElementById('modal-copy-btn');
+      if (btn) {
+        btn.textContent = 'Code Copied!';
+        setTimeout(() => { btn.textContent = 'Copy Code & Link'; }, 1500);
+      }
+    } catch (_) {
+      alert('Unable to copy code.');
+    }
+  }
+
+  function createMeetingRoom() {
+    const roomId = generateMeetingRoomId();
+    const input = document.getElementById('meeting-room-id');
+    input.value = roomId;
+    joinMeeting();
+  }
+
+  async function copyMeetingLink() {
+    if (!inMeeting || !currentMeetingRoom) return;
+
+    const btn = document.getElementById('copy-link-btn');
+    const meetingLink = buildMeetingLink(currentMeetingRoom);
+
+    try {
+      await navigator.clipboard.writeText(meetingLink);
+      btn.textContent = 'Link copied';
+      setStatus('Meeting link copied', true);
+      setTimeout(() => { btn.textContent = 'Copy meeting link'; }, 1200);
+    } catch (_) {
+      setStatus('Unable to copy link', false);
+    }
+  }
+
+
+  async function joinMeeting() {
+    await startMeetingCamera();
+    try {
+      if (socket) {
+        try {
+          socket.off(); // Remove all listeners to prevent stale events
+          socket.disconnect();
+        } catch (_) {}
+        socket = null;
+      }
+
+      const input = document.getElementById('meeting-room-id');
+      const roomId = sanitizeMeetingCode(input.value) || 'general';
+      input.value = roomId;
+      let roomJoined = false;
+
+      const roleSelect = document.getElementById('meeting-role-select');
+      if (roleSelect) {
+        const selectedRole = roleSelect.value;
+        isDeafHohUser = (selectedRole === 'signer');
+        isSpeakerUser = !isDeafHohUser;
+        userRole = isDeafHohUser ? 'Deaf/HoH' : 'Speaker';
+      }
+
+      const syncMeetingConnection = () => {
+        if (!socket || !socket.connected || roomJoined) return;
+        roomJoined = true;
+        socket.emit('join_room', { room: roomId });
+        socket.emit('announce_presence', {
+          room: roomId,
+          name: displayName,
+          role: isDeafHohUser ? 'Signer' : 'Speaker'
+        });
+        setStatus(`Meeting: ${roomId}`, true);
+        setMeetingUiState(true);
+      };
+
+      if (socket && socket.connected && inMeeting && currentMeetingRoom && currentMeetingRoom !== roomId) {
+        socket.emit('leave_room', { room: currentMeetingRoom });
+      }
+
+      currentMeetingRoom = roomId;
+
+      if (!socket) {
+        socket = io({ auth: { token: getToken() || '' } });
+        const currentSocket = socket;
+
+        socket.on('connect', syncMeetingConnection);
+
+        socket.on('disconnect', () => {
+          if (socket !== currentSocket) return;
+          inMeeting = false;
+          setMeetingUiState(false);
+        });
+
+        socket.on('connect_error', (err) => {
+          if (socket !== currentSocket) return;
+          inMeeting = false;
+          setMeetingUiState(false);
+          const errMsg = err ? (err.message || err.toString()) : 'Unknown error';
+          setStatus(`Meeting connection failed: ${errMsg}`, false);
+          { const _mp = document.getElementById('meeting-status-pill'); if (_mp) { _mp.setAttribute('data-state', 'failed'); _mp.classList.remove('connected'); _mp.textContent = 'Connection failed'; } }
+          console.error('[Socket.IO connect_error]', err);
+        });
+
+        socket.on('remote_sentence', (data) => {
+          const payload = typeof data === 'string' ? { text: data } : (data || {});
+          renderMeetingSentence(payload.text, payload.senderRole, false);
+        });
+
+        socket.on('new_peer', () => {
+          console.log('[Meeting] New peer joined');
+          socket.emit('announce_presence', {
+            room: currentMeetingRoom,
+            name: displayName,
+            role: isDeafHohUser ? 'Signer' : 'Speaker'
+          });
+        });
+
+        socket.on('presence_announced', (data) => {
+          const peerDiv = document.getElementById('participant-peer');
+          if (peerDiv) {
+            peerDiv.innerHTML = `<strong>${data.name}</strong> <span style="font-size:10px; opacity:0.75;">(${data.role})</span>`;
+            peerDiv.style.fontStyle = 'normal';
+          }
+          socket.emit('announce_presence_reply', {
+            room: currentMeetingRoom,
+            name: displayName,
+            role: isDeafHohUser ? 'Signer' : 'Speaker'
+          });
+
+          // Initiate WebRTC connection
+          if (data.sender_sid && socket && socket.id) {
+            const peerRole = (data.role || '').toString().toLowerCase();
+            const myRole = isDeafHohUser ? 'signer' : 'speaker';
+            let isCaller = false;
+            if (myRole === 'signer' && peerRole === 'speaker') {
+              isCaller = true;
+            } else if (myRole === 'speaker' && peerRole === 'signer') {
+              isCaller = false;
+            } else {
+              isCaller = socket.id < data.sender_sid;
+            }
+            initWebRtc(data.sender_sid, isCaller);
+          }
+        });
+
+        socket.on('presence_reply', (data) => {
+          const peerDiv = document.getElementById('participant-peer');
+          if (peerDiv) {
+            peerDiv.innerHTML = `<strong>${data.name}</strong> <span style="font-size:10px; opacity:0.75;">(${data.role})</span>`;
+            peerDiv.style.fontStyle = 'normal';
+          }
+
+          // Initiate WebRTC connection
+          if (data.sender_sid && socket && socket.id) {
+            const peerRole = (data.role || '').toString().toLowerCase();
+            const myRole = isDeafHohUser ? 'signer' : 'speaker';
+            let isCaller = false;
+            if (myRole === 'signer' && peerRole === 'speaker') {
+              isCaller = true;
+            } else if (myRole === 'speaker' && peerRole === 'signer') {
+              isCaller = false;
+            } else {
+              isCaller = socket.id < data.sender_sid;
+            }
+            initWebRtc(data.sender_sid, isCaller);
+          }
+        });
+
+        socket.on('peer_left', () => {
+          const peerDiv = document.getElementById('participant-peer');
+          if (peerDiv) {
+            peerDiv.innerHTML = '<span style="color:var(--gray-400); font-style:italic;">Waiting for peer...</span>';
+          }
+          if (peerConnection) {
+            try { peerConnection.close(); } catch(_) {}
+            peerConnection = null;
+          }
+          peerSocketId = null;
+          const remoteVideo = document.getElementById('remote_video');
+          if (remoteVideo) {
+            remoteVideo.srcObject = null;
+            remoteVideo.style.display = 'none';
+          }
+          const placeholder = document.getElementById('meeting-video-placeholder');
+          if (placeholder) {
+            placeholder.style.display = 'flex';
+            placeholder.textContent = forcedLang === 'ar' ? 'بانتظار الطرف الآخر...' : 'Waiting for peer...';
+          }
+        });
+
+        // WebRTC Signaling listeners
+        socket.on('webrtc_offer', async (data) => {
+          console.log("[WebRTC] Received offer from", data.sender_sid);
+          if (!peerConnection) {
+            initWebRtc(data.sender_sid, false);
+          }
+          try {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            console.log("[WebRTC] Applying buffered ICE candidates...");
+            while (iceCandidateBuffer.length > 0) {
+              const candidate = iceCandidateBuffer.shift();
+              try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+              } catch (err) {
+                console.error("[WebRTC] Error adding buffered ICE candidate:", err);
+              }
+            }
+            console.log("[WebRTC] Creating answer...");
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('webrtc_answer', {
+              sdp: answer,
+              room: currentMeetingRoom
+            });
+          } catch (err) {
+            console.error("[WebRTC] Error handling offer:", err);
+          }
+        });
+
+        socket.on('webrtc_answer', async (data) => {
+          console.log("[WebRTC] Received answer from", data.sender_sid);
+          if (peerConnection) {
+            try {
+              await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+              console.log("[WebRTC] Applying buffered ICE candidates...");
+              while (iceCandidateBuffer.length > 0) {
+                const candidate = iceCandidateBuffer.shift();
+                try {
+                  await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (err) {
+                  console.error("[WebRTC] Error adding buffered ICE candidate:", err);
+                }
+              }
+            } catch (err) {
+              console.error("[WebRTC] Error setting remote description:", err);
+            }
+          }
+        });
+
+        socket.on('webrtc_ice_candidate', async (data) => {
+          console.log("[WebRTC] Received ICE candidate from", data.sender_sid);
+          if (peerConnection && data.candidate) {
+            if (peerConnection.remoteDescription) {
+              try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+              } catch (err) {
+                console.error("[WebRTC] Error adding ICE candidate:", err);
+              }
+            } else {
+              console.log("[WebRTC] Buffering ICE candidate until remote description is set");
+              iceCandidateBuffer.push(data.candidate);
+            }
+          }
+        });
+
+        socket.on('room_full', (data) => {
+          setStatus(`Room ${data.room || ''} is full (max 2 participants)`, false);
+          leaveMeeting();
+        });
+      }
+
+      // Start camera before joining/syncing meeting connection
+      try {
+        await startMeetingCamera();
+      } catch (e) {
+        console.error("Failed to start camera on join:", e);
+      }
+
+      syncMeetingConnection();
+      inMeeting = true;
+      setMeetingUiState(true);
+      setStatus(`Connecting to ${roomId}...`, true);
+      { const _mp = document.getElementById('meeting-status-pill'); if (_mp) { _mp.setAttribute('data-state', 'connecting'); _mp.classList.remove('connected'); _mp.textContent = 'Connecting…'; } }
+      renderMobileQuickActions();
+      initMeetingRoleUi();
+
+      if (isDeafHohUser) {
+        if (!meetingSignInputOn) {
+          try { startCamera(); } catch (_) {}
+          meetingSignInputOn = true;
+          const signBtn = document.getElementById('meeting-sign-btn');
+          if (signBtn) {
+            signBtn.textContent = '🤟 Sign Input On';
+            signBtn.classList.add('on');
+          }
+        }
+      } else {
+        if (meetingSignInputOn) {
+          try { stopCamera(); } catch (_) {}
+          meetingSignInputOn = false;
+          const signBtn = document.getElementById('meeting-sign-btn');
+          if (signBtn) {
+            signBtn.textContent = '🤟 Sign Input Off';
+            signBtn.classList.remove('on');
+          }
+        }
+      }
+
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', roomId);
+      history.replaceState(null, '', `${url.pathname}${url.search}`);
+    } catch (err) {
+      console.error("[joinMeeting Error]", err);
+      inMeeting = false;
+      setMeetingUiState(false);
+      setStatus(`Meeting init failed: ${err.message || err}`, false);
+      showDebugError(`joinMeeting Error: ${err.message}\n${err.stack}`);
+    }
+  }
+
+  function leaveMeeting() {
+    if (meetingMicRec) {
+      try { meetingMicRec.stop(); } catch (_) { }
+      meetingMicRec = null;
+    }
+    if (meetingMicMediaRec && meetingMicMediaRec.state !== 'inactive') {
+      try { meetingMicMediaRec.stop(); } catch (_) { }
+      meetingMicMediaRec = null;
+    }
+    meetingMicAudioChunks = [];
+    meetingMicOn = false;
+    const micBtn = document.getElementById('meeting-mic-btn');
+    if (micBtn) {
+      micBtn.textContent = '🔇 Mic Off';
+      micBtn.style.background = '';
+      micBtn.style.color = '';
+    }
+
+    if (peerConnection) {
+      try { peerConnection.close(); } catch(_) {}
+      peerConnection = null;
+    }
+    peerSocketId = null;
+
+    if (socket && socket.connected && currentMeetingRoom) {
+      socket.emit('leave_room', { room: currentMeetingRoom });
+    }
+    if (socket) { socket.disconnect(); socket = null; }
+
+    if (meetingSignInputOn) {
+      stopCamera();
+      meetingSignInputOn = false;
+      const signBtn = document.getElementById('meeting-sign-btn');
+      if (signBtn) {
+        signBtn.textContent = '🤟 Sign Input Off';
+        signBtn.classList.remove('on');
+      }
+    }
+
+    const avatarCorner = document.getElementById('meeting-avatar-corner');
+    if (avatarCorner) avatarCorner.classList.remove('visible');
+
+    stopMeetingCamera();
+
+    inMeeting = false;
+    currentMeetingRoom = 'general';
+    document.getElementById('meeting-room-id').value = currentMeetingRoom;
+    document.getElementById('remote-sentence').textContent = 'No messages yet.';
+    document.getElementById('remote-sentence').style.color = 'var(--gray-500)';
+    setMeetingUiState(false);
+    initMeetingRoleUi();
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('room');
+    history.replaceState(null, '', `${url.pathname}${url.search}`);
+
+    setStatus('Ready', false);
+    renderMobileQuickActions();
+  }
+
+  async function toggleMeetingMic() {
+    if (!socket || !inMeeting || !socket.connected) {
+      meetingMicOn = false;
+      setStatus('Join meeting first', false);
+      renderMobileQuickActions();
+      return;
+    }
+
+    const btn = document.getElementById('meeting-mic-btn');
+
+    // ── Determine if Arabic/Egyptian mode (Gemini STT path) ──
+    const isArabicMic = (forcedLang === 'ar');
+
+    // ─────────────────────────────────────────────────────────
+    // ARABIC / EGYPTIAN → MediaRecorder + Gemini push-to-talk
+    // ─────────────────────────────────────────────────────────
+    if (isArabicMic) {
+      if (meetingMicMediaRec && meetingMicMediaRec.state !== 'inactive') {
+        // Second press: stop and transcribe
+        meetingMicMediaRec.stop();
+        meetingMicOn = false;
+        btn.textContent = '🔇 ميك مغلق';
+        btn.style.background = 'rgba(255,255,255,0.1)';
+        btn.style.color = 'rgba(255,255,255,0.5)';
+        setStatus('Transcribing…', true);
+        renderMobileQuickActions();
+        return;
+      }
+
+      // First press: start recording
+      const mediaCheck = ensureMediaApi('Microphone');
+      if (!mediaCheck.ok) {
+        setStatus('Mic unavailable', false);
+        alert(mediaCheck.message);
+        renderMobileQuickActions();
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        meetingMicAudioChunks = [];
+        meetingMicMediaRec = new MediaRecorder(stream);
+
+        meetingMicMediaRec.ondataavailable = (e) => {
+          if (e.data.size > 0) meetingMicAudioChunks.push(e.data);
+        };
+
+        meetingMicMediaRec.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop());
+          if (meetingMicAudioChunks.length === 0) return;
+
+          const audioBlob = new Blob(meetingMicAudioChunks, { type: 'audio/webm' });
+          const formData = new FormData();
+          formData.append('file', audioBlob, 'meeting_speech.webm');
+          formData.append('language', 'arabic');
+
+          try {
+            const res = await authFetch('/api/stt', { method: 'POST', body: formData });
+            if (!res.ok) throw new Error('STT failed');
+            const sttData = await res.json();
+            const text = (sttData.text || '').trim();
+            if (text && socket && inMeeting) {
+              const roomId = currentMeetingRoom || document.getElementById('meeting-room-id').value.trim() || 'general';
+              renderMeetingSentence(text, userRole, true);
+              socket.emit('translate_sentence', {
+                text,
+                room: roomId,
+                mode: isSpeakerUser ? 'speaker_speech' : 'participant_speech',
+                senderRole: userRole,
+              });
+              setStatus('Message sent', true);
+            } else {
+              setStatus('No speech detected', false);
+            }
+          } catch (err) {
+            console.error('[Meeting STT Error]', err);
+            setStatus('Transcription error', false);
+          } finally {
+            meetingMicMediaRec = null;
+            meetingMicAudioChunks = [];
+            btn.textContent = '🔇 ميك مغلق';
+            btn.style.background = 'rgba(255,255,255,0.1)';
+            btn.style.color = 'rgba(255,255,255,0.5)';
+          }
+        };
+
+        meetingMicMediaRec.start();
+        meetingMicOn = true;
+        btn.textContent = '🔴 تسجيل… (اضغط للإيقاف)';
+        btn.style.background = 'rgba(220,50,50,0.25)';
+        btn.style.color = '#ff6b6b';
+        setStatus('Recording…', true);
+      } catch (err) {
+        setStatus('Mic permission denied', false);
+      }
+      renderMobileQuickActions();
+      return;
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // ENGLISH → SpeechRecognition (continuous)
+    // ─────────────────────────────────────────────────────────
+    meetingMicOn = !meetingMicOn;
+
+    if (meetingMicOn) {
+      btn.textContent = '🎙️ Mic On';
+      btn.style.background = 'rgba(255,255,255,0.18)';
+      btn.style.color = 'rgba(255,255,255,0.85)';
+
+      const mediaCheck = ensureMediaApi('Microphone');
+      if (!mediaCheck.ok) {
+        meetingMicOn = false;
+        btn.textContent = '🔇 Mic Off';
+        btn.style.background = 'rgba(255,255,255,0.1)';
+        btn.style.color = 'rgba(255,255,255,0.5)';
+        setStatus('Mic unavailable', false);
+        alert(mediaCheck.message);
+        renderMobileQuickActions();
+        return;
+      }
+
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SR && socket && inMeeting) {
+        meetingMicRec = new SR();
+        meetingMicRec.continuous = true;
+        meetingMicRec.interimResults = false;
+        meetingMicRec.lang = navigator.language || 'en-US';
+        meetingMicRec.onresult = (e) => {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) {
+              const text = e.results[i][0].transcript.trim();
+              const roomId = currentMeetingRoom || document.getElementById('meeting-room-id').value.trim() || 'general';
+              socket.emit('translate_sentence', {
+                text,
+                room: roomId,
+                mode: isSpeakerUser ? 'speaker_speech' : 'participant_speech',
+                senderRole: userRole,
+              });
+            }
+          }
+        };
+        meetingMicRec.onerror = () => {
+          btn.textContent = '🔇 Mic Off';
+          btn.style.background = 'rgba(255,255,255,0.1)';
+          btn.style.color = 'rgba(255,255,255,0.5)';
+          meetingMicOn = false;
+          renderMobileQuickActions();
+        };
+        meetingMicRec.start();
+      } else {
+        meetingMicOn = false;
+        btn.textContent = '🔇 Mic Off';
+        btn.style.background = 'rgba(255,255,255,0.1)';
+        btn.style.color = 'rgba(255,255,255,0.5)';
+        setStatus('Speech API unsupported', false);
+      }
+    } else {
+      btn.textContent = '🔇 Mic Off';
+      btn.style.background = 'rgba(255,255,255,0.1)';
+      btn.style.color = 'rgba(255,255,255,0.5)';
+      if (meetingMicRec) { meetingMicRec.stop(); meetingMicRec = null; }
+    }
+    renderMobileQuickActions();
+  }
+
+  initMeetingFromUrl();
+
+
+
+  // ═══════════════════════════════════════════════════════════
+  // ── FEATURE 2: SIGN-TO-SPEECH ───────────────────────────────
+  // Independent camera + MediaPipe + /api/translate + LLM + TTS
+  // ═══════════════════════════════════════════════════════════
+  let s2spCameraOn = false;
+  let s2spHolistic = null;
+  let s2spMpCamera = null;
+  const s2spFrameBuf = [];
+  let s2spGlossBuf = [];
+  let s2spLastSign = '';
+  let s2spSameCount = 0;
+  let s2spGlossTimer = null;
+  let s2spSentences = [];
+
+  function toggleS2SpCamera() { s2spCameraOn ? stopS2SpCamera() : startS2SpCamera(); }
+
+  function startS2SpCamera() {
+    if (s2spCameraOn) return; // idempotency guard
+    s2spCameraOn = true;
+    console.log("[Camera] Starting Sign-to-Speech camera...");
+    const video = document.getElementById('s2sp-webcam');
+    const canvas = document.getElementById('s2sp-canvas');
+    const placeholder = document.getElementById('s2sp-placeholder');
+    const badge = document.getElementById('s2sp-badge');
+    const btn = document.getElementById('s2sp-cam-btn');
+
+    const mediaCheck = ensureMediaApi('Camera');
+    if (!mediaCheck.ok) {
+      s2spCameraOn = false;
+      setStatus('Camera unavailable', false);
+      renderMobileQuickActions();
+      alert(mediaCheck.message);
+      return;
+    }
+
+    navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+      console.log("[Camera] Stream acquired.");
+      if (!s2spCameraOn) {
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
+      video.srcObject = stream;
+      video.style.display = 'block';
+      canvas.style.display = 'block';
+      placeholder.style.display = 'none';
+      badge.style.display = 'block';
+      btn.textContent = forcedLang === 'ar' ? 'إيقاف الكاميرا' : 'Stop Camera';
+      btn.classList.add('on');
+      s2spCameraOn = true;
+      renderMobileQuickActions();
+
+      if (!window.Holistic) {
+        console.error("[Camera] MediaPipe Holistic library not loaded (S2SP).");
+        return;
+      }
+      if (!s2spHolistic) {
+        s2spHolistic = new Holistic({
+          locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/${file}`
+        });
+
+        s2spHolistic.setOptions({
+          modelComplexity: 1,
+          smoothLandmarks: true,
+          minDetectionConfidence: 0.7,  // matches sign-to-text.py
+          minTrackingConfidence: 0.7,   // matches sign-to-text.py
+        });
+        s2spHolistic.onResults(onS2SpHolisticResults);
+      }
+
+      console.log("[Camera] Initializing MediaPipe Camera helper (S2SP)...");
+      if (!window.Camera) return;
+      s2spMpCamera = new window.Camera(video, {
+        onFrame: async () => {
+          if (s2spHolistic) await s2spHolistic.send({ image: video });
+        },
+        width: 640, height: 480,
+      });
+      s2spMpCamera.start().then(() => console.log("[Camera] S2SP MediaPipe Camera started."));
+    }).catch(err => {
+      console.error("[Camera] Error:", err);
+      s2spCameraOn = false;
+      setStatus('Camera Error', false);
+      renderMobileQuickActions();
+      alert(`Camera access failed: ${err.name || err.message || err}. Please check permissions.`);
+    });
+  }
+
+  function stopS2SpCamera() {
+    if (!s2spCameraOn) return;
+    const video = document.getElementById('s2sp-webcam');
+    if (s2spMpCamera) { s2spMpCamera.stop(); s2spMpCamera = null; }
+    if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
+    video.style.display = 'none';
+    document.getElementById('s2sp-canvas').style.display = 'none';
+    document.getElementById('s2sp-badge').style.display = 'none';
+    document.getElementById('s2sp-placeholder').style.display = 'flex';
+    document.getElementById('s2sp-cam-btn').textContent = forcedLang === 'ar' ? 'تشغيل الكاميرا' : 'Start Camera';
+    document.getElementById('s2sp-cam-btn').classList.remove('on');
+    s2spCameraOn = false;
+    // Reset all S2SP voting + gloss state
+    s2spFrameBuffer = [];
+    s2spVoteBuffer = [];
+    s2spConsecHand = 0;
+    s2spGapCounter = 0;
+    s2spGlobalCooldown = 0;
+    s2spLastPredWord = null;
+    s2spInferRunning = false;
+    clearTimeout(s2spGlossTimer);
+    s2spGlossTimer = null;
+    s2spGlossBuf = [];
+    renderMobileQuickActions();
+  }
+
+  // ── S2SP voting state (same constants as Feature 1) ─────────
+  let s2spVoteBuffer = [];
+  let s2spConsecHand = 0;
+  let s2spGapCounter = 0;
+  let s2spGlobalCooldown = 0;
+  let s2spLastPredWord = null;
+  let s2spInferRunning = false;
+  let s2spFrameBuffer = [];   // rolling 60-frame window for Sign-to-Speech
+
+  function onS2SpHolisticResults(results) {
+    const canvas = document.getElementById('s2sp-canvas');
+    canvas.width = results.image.width;
+    canvas.height = results.image.height;
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    if (window.drawConnectors && window.HAND_CONNECTIONS) {
+      if (results.leftHandLandmarks)
+        drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: '#00ffff', lineWidth: 2 });
+      if (results.rightHandLandmarks)
+        drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: '#ff00ff', lineWidth: 2 });
+    }
+
+    const handsPresent = !!(results.leftHandLandmarks || results.rightHandLandmarks);
+
+    if (handsPresent) {
+      s2spConsecHand++;
+      s2spGapCounter = 0;
+    } else {
+      s2spGapCounter++;
+      if (s2spGapCounter > MAX_HAND_GAP_FRAMES) {
+        s2spConsecHand = 0;
+        s2spGapCounter = 0;
+        s2spFrameBuffer = [];     // clear sequence on true gap
+        s2spVoteBuffer = [];      // clear votes on true gap
+        s2spLastPredWord = null;  // allow same sign again after silence
+      }
+    }
+
+    if (s2spGlobalCooldown > 0) { s2spGlobalCooldown--; }
+    if (!s2spCameraOn) return;
+    if (s2spGlobalCooldown > 0 || s2spConsecHand < MIN_HAND_FRAMES) return;
+
+    const frame = buildLandmarkFrame(results);
+    s2spFrameBuffer.push(frame);
+    if (s2spFrameBuffer.length > SEQ_LENGTH) s2spFrameBuffer.shift();
+
+    if (s2spInferRunning || s2spFrameBuffer.length < MIN_SEQ_FRAMES) return;
+
+    s2spSendOneFrame([...s2spFrameBuffer]);
+  }
+
+  async function s2spSendOneFrame(frames) {
+    s2spInferRunning = true;
+    try {
+      const langSelect = document.getElementById('s2sp-cam-language-select');
+      const language = langSelect ? langSelect.value : 'english';
+      const videoEl = document.getElementById('s2sp-webcam');
+      const w = videoEl ? (videoEl.videoWidth || 640) : 640;
+      const h = videoEl ? (videoEl.videoHeight || 480) : 480;
+
+      const payloadFrames = preparePayload(frames, language);
+      const res = await authFetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frames: payloadFrames, language, w, h }),
+      });
+      if (!res.ok) { s2spInferRunning = false; return; }
+      const data = await res.json();
+
+      if (!s2spCameraOn) { s2spInferRunning = false; return; }
+
+      if (data.text && data.confidence > 0) {
+        s2spVoteBuffer.push(data.text);
+        if (s2spVoteBuffer.length > VOTE_BUFFER_SIZE) s2spVoteBuffer.shift();
+
+        if (s2spVoteBuffer.length >= VOTE_BUFFER_SIZE) {
+          const counts = {};
+          for (const w of s2spVoteBuffer) counts[w] = (counts[w] || 0) + 1;
+          const winner = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+          const count = counts[winner];
+
+          if (count >= STABILITY_FRAMES && winner !== s2spLastPredWord) {
+            // Mirror script: vote_buffer.clear() + sequence.clear() + global_cooldown
+            s2spLastPredWord = winner;
+            s2spVoteBuffer = [];       // vote_buffer.clear()
+            s2spFrameBuffer = [];      // sequence.clear()
+            s2spGlobalCooldown = GLOBAL_COOLDOWN_FRM;
+            s2spHandleSign(winner);
+          }
+        }
+      }
+    } catch (_) { }
+    s2spInferRunning = false;
+  }
+
+
+
+  function s2spHandleSign(word) {
+    if (forcedLang === 'ar') {
+      s2spGlossBuf = [];
+      const el = document.getElementById('s2sp-gloss-output');
+      el.innerHTML = `<span style="color:var(--black);">${word}</span>`;
+
+      if (window.s2spArClearTimeout) {
+        clearTimeout(window.s2spArClearTimeout);
+      }
+
+      // Show immediately and read aloud
+      document.getElementById('s2sp-sentence-output').innerHTML = `<span>${word}</span>`;
+      playLocalTts(word, 'arabic');
+
+      // Log it
+      s2spSentences.unshift({ text: word, time: new Date().toLocaleTimeString() });
+      const log = document.getElementById('s2sp-log');
+      if (log) {
+        log.innerHTML = s2spSentences.slice(0, 20).map(s =>
+          `<div style="padding:8px 12px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;">
+          <div style="font-size:13px;font-weight:600;">${s.text}</div>
+          <div style="font-size:10px;color:var(--gray-400);margin-top:2px;">${s.time}</div>
+        </div>`
+        ).join('');
+      }
+
+      // Clear the display outputs after 2 seconds
+      window.s2spArClearTimeout = setTimeout(() => {
+        document.getElementById('s2sp-sentence-output').innerHTML = '<span style="color:var(--gray-300);font-weight:500;font-size:15px;">Waiting for signs…</span>';
+        document.getElementById('s2sp-gloss-output').innerHTML = '<span class="transcription-placeholder">Signs appear here…</span>';
+      }, 2000);
+    } else {
+      // Voting already ensured uniqueness — just push the word
+      s2spGlossBuf.push(word);
+      const el = document.getElementById('s2sp-gloss-output');
+      el.innerHTML = `<span style="color:var(--black);">${s2spGlossBuf.join(' ')}</span>`;
+    }
+  }
+
+  async function s2spTriggerSentence() {
+    if (s2spGlossBuf.length === 0) return;
+    const gloss = [...s2spGlossBuf];
+    s2spGlossBuf = [];
+    const isArabicMode = forcedLang === 'ar';
+    
+    document.getElementById('s2sp-sentence-output').innerHTML =
+        isArabicMode
+          ? '<span style="color:var(--gray-400);font-size:15px;">جاري تكوين الجملة...</span>'
+          : '<span style="color:var(--gray-400);font-size:15px;">Forming sentence...</span>';
+
+    document.getElementById('s2sp-gloss-output').innerHTML =
+      '<span class="transcription-placeholder">Signs appear here…</span>';
+
+    try {
+      const res = await authFetch('/api/translate/sentence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gloss, language: forcedLang }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const sentence = data.sentence || (isArabicMode ? 'تعذر إنشاء الترجمة العربية' : gloss.join(' '));
+
+      document.getElementById('s2sp-sentence-output').innerHTML =
+        `<span>${sentence}</span>`;
+
+      // Speak it
+      if (isArabicMode) {
+        playLocalTts(sentence, 'arabic');
+      } else if ('speechSynthesis' in window) {
+        const utt = new SpeechSynthesisUtterance(sentence);
+        utt.rate = 1;
+        utt.volume = 1;
+        window.speechSynthesis.speak(utt);
+      }
+
+      // Log it
+      s2spSentences.unshift({ text: sentence, time: new Date().toLocaleTimeString() });
+      const log = document.getElementById('s2sp-log');
+      log.innerHTML = s2spSentences.slice(0, 20).map(s =>
+        `<div style="padding:8px 12px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;">
+        <div style="font-size:13px;font-weight:600;">${s.text}</div>
+        <div style="font-size:10px;color:var(--gray-400);margin-top:2px;">${s.time}</div>
+      </div>`
+      ).join('');
+    } catch (_) { }
+  }
+
+  function s2spClear() {
+    s2spGlossBuf = [];
+    s2spVoteBuffer = [];
+    s2spFrameBuffer = [];
+    s2spLastPredWord = null;
+    document.getElementById('s2sp-gloss-output').innerHTML = '<span class="transcription-placeholder">Signs appear here…</span>';
+    document.getElementById('s2sp-sentence-output').innerHTML = '<span style="color:var(--gray-300);font-weight:500;font-size:15px;">Waiting for signs…</span>';
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // ── STARTUP: Check engine health ───────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  (async function checkHealth() {
+    try {
+      const res = await authFetch('/api/health');
+      const data = await res.json();
+      const signs = data.signs_loaded || 0;
+      if (data.status === 'ok' && data.models_ready) {
+        setStatus(`AI Ready · ${signs} signs`, false);
+      } else if (data.status === 'ok' && !data.models_ready) {
+        setStatus('Preparing AI…', false);
+      } else if (data.status === 'degraded') {
+        // TFLite failed but sign DB may be fine
+        if (data.db_status === 'ok' && signs > 0) {
+          setStatus(`DB Ready · ${signs} signs (AI model degraded)`, false);
+        } else {
+          setStatus('AI Engine Error', false);
+        }
+        console.warn('[Health] ASL engine error:', data.error);
+      } else if (data.status === 'idle') {
+        // TFLite not loaded yet, but DB may be ready
+        if (data.db_status === 'ok' && signs > 0) {
+          setStatus(`DB Ready · ${signs} signs`, false);
+        } else {
+          setStatus('Initializing…', false);
+        }
+      }
+    } catch (_) { }
+
+    // Warm up AI models in the background without running inference on user timeline.
+    try {
+      _warmingUp = true;
+      await authFetch('/api/health?warm=1');
+      const warmed = await authFetch('/api/health');
+      const warmedData = await warmed.json();
+      if (warmedData.status === 'ok' && warmedData.models_ready) {
+        setStatus(`AI Ready · ${warmedData.signs_loaded || signs} signs`, false);
+      }
+      console.log('[Warmup] Health warm-up completed.');
+    } catch (_) { } finally {
+      _warmingUp = false;
+    }
+  })();
+
+
+  // ═══════════════════════════════════════════════════════════
+  // UTILITIES & GLOBAL EVENTS
+  // ═══════════════════════════════════════════════════════════
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      if (forcedLang === 'ar') return;
+      const activePanel = document.querySelector('.module-panel.active').id;
+      if (activePanel === 'panel-vision' && typeof triggerSentenceTranslation === 'function') {
+        e.preventDefault();
+        triggerSentenceTranslation();
+      } else if (activePanel === 'panel-speech' && typeof s2spTriggerSentence === 'function') {
+        e.preventDefault();
+        s2spTriggerSentence();
+      }
+    }
+  });
+  // ── MiniOrb ThreeJS Renderer ──
+  (function initMiniOrb() {
+    const container = document.getElementById('orb-container');
+    if (!container || typeof THREE === 'undefined') return;
+
+    const canvas = document.createElement('canvas');
+    canvas.style.position = 'absolute';
+    canvas.style.width = '120px';
+    canvas.style.height = '120px';
+    canvas.style.zIndex = '5';
+    container.insertBefore(canvas, container.firstChild);
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: true,
+      powerPreference: "low-power",
+    });
+    renderer.setSize(120, 120, false);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    camera.position.z = 3.5;
+
+    const geo = new THREE.IcosahedronGeometry(1, 1);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    scene.add(mesh);
+
+    let raf = 0;
+    let t = 0;
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+      t += 0.01;
+      mesh.rotation.x = t * 0.4;
+      mesh.rotation.y = t * 0.6;
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    window.addEventListener('beforeunload', () => {
+      cancelAnimationFrame(raf);
+      renderer.dispose();
+      geo.dispose();
+      mat.dispose();
+    });
+  })();
+
+  // Apply role-based default panel after script initialization.
+  if (defaultModuleByRole && defaultModuleByRole !== currentModule) {
+    showModule(defaultModuleByRole);
+  } else {
+    const mobileSel = document.getElementById('mobile-module-select');
+    if (mobileSel) mobileSel.value = currentModule;
+    renderMobileQuickActions();
+  }
+
+</script>
+
+{% endblock %}

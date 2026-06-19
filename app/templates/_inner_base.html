@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block main_style %}padding-top: 60px;{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="/static/css/theme.css?v=phase7-1">
+<link rel="stylesheet" href="/static/css/ui.css?v=phase7-1">
+<script src="/static/js/theme.js?v=phase7-1"></script>
+<style>
+  body{background:var(--bg)!important;color:var(--text)!important;font-family:var(--font-sans)!important}
+  #main-content{max-width:100%!important;background:transparent!important}
+  #sf-canvas{position:fixed;inset:0;z-index:-2;pointer-events:none}
+
+  /* ── Ribbon Nav (Shared exactly with landing.html) ── */
+  .lp-nav{position:fixed;top:0;inset-inline:0;z-index:100;display:flex;align-items:center;gap:8px;padding:0 32px;height:60px;
+    background:color-mix(in srgb,var(--bg) 72%,transparent);backdrop-filter:blur(18px) saturate(130%);
+    border-bottom:1px solid var(--border);transition:background .4s}
+  .lp-nav-brand{display:flex;align-items:center;text-decoration:none;flex-shrink:0}
+  .lp-nav-brand img{height:42px;width:auto}
+  .lp-nav-brand-fb{display:none;align-items:center;gap:10px;font-family:var(--font-display);font-weight:800;font-size:20px;color:var(--text)}
+  .lp-nav-brand-fb .lp-logo{width:32px;height:32px;border-radius:9px;background:var(--accent);display:grid;place-items:center;color:#fff;font-size:15px;font-weight:800}
+  .lp-nav-links{display:flex;align-items:center;gap:2px;margin-inline-start:18px;flex:1}
+  .lp-dd{position:relative}
+  .lp-dd-btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:var(--radius-full);font-size:13.5px;font-weight:600;color:var(--muted);background:none;border:none;cursor:pointer;transition:color .18s,background .18s}
+  .lp-dd-btn:hover,.lp-dd-btn:focus-visible{color:var(--text);background:var(--surface)}
+  .lp-dd-btn svg{width:12px;height:12px;transition:transform .2s}
+  .lp-dd:hover .lp-dd-btn svg,.lp-dd:focus-within .lp-dd-btn svg{transform:rotate(180deg)}
+  .lp-dd-menu{position:absolute;top:calc(100% + 8px);inset-inline-start:0;min-width:230px;
+    background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(20px);
+    border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);
+    padding:8px;opacity:0;pointer-events:none;transform:translateY(-8px);transition:opacity .18s,transform .18s}
+  .lp-dd:hover .lp-dd-menu,.lp-dd:focus-within .lp-dd-menu{opacity:1;pointer-events:auto;transform:translateY(0)}
+  .lp-dd-item{display:flex;align-items:flex-start;gap:11px;padding:10px 12px;border-radius:var(--radius);text-decoration:none;transition:background .15s}
+  .lp-dd-item:hover{background:var(--surface-2)}
+  .lp-dd-icon{width:32px;height:32px;border-radius:8px;background:var(--accent-soft);display:grid;place-items:center;flex-shrink:0;color:var(--accent)}
+  .lp-dd-icon svg{width:16px;height:16px}
+  .lp-dd-label{font-size:13.5px;font-weight:600;color:var(--text)}
+  .lp-dd-desc{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .lp-nav-link{padding:7px 13px;border-radius:var(--radius-full);font-size:13.5px;font-weight:600;color:var(--muted);text-decoration:none;transition:color .18s,background .18s}
+  .lp-nav-link:hover{color:var(--text);background:var(--surface)}
+  .lp-nav-end{display:flex;align-items:center;gap:12px;margin-inline-start:auto}
+  .lp-nav-sep{width:1px;height:22px;background:var(--border)}
+  
+  /* ── Magnetic Buttons ── */
+  .btn-magnetic {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 18px;
+    border-radius: 9999px;
+    font-size: 13.5px;
+    font-weight: 700;
+    text-decoration: none;
+    overflow: hidden;
+    transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+    z-index: 1;
+    border: none;
+  }
+  .btn-magnetic-text {
+    position: relative;
+    z-index: 10;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: color 0.45s cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  .btn-magnetic-fill {
+    position: absolute;
+    inset: 0;
+    transform: translateY(101%);
+    transition: transform 0.45s cubic-bezier(0.65, 0, 0.35, 1);
+    border-radius: inherit;
+    z-index: 1;
+  }
+  .btn-magnetic-primary {
+    background: var(--text, #030213);
+    color: var(--bg, #ffffff);
+  }
+  .btn-magnetic-primary .btn-magnetic-fill {
+    background: var(--bg, #ffffff);
+  }
+  .btn-magnetic-primary:hover .btn-magnetic-fill {
+    transform: translateY(0);
+  }
+  .btn-magnetic-primary:hover .btn-magnetic-text {
+    color: var(--text, #030213);
+  }
+  .btn-magnetic-outline {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid color-mix(in srgb,var(--accent) 25%,transparent);
+  }
+  .btn-magnetic-outline .btn-magnetic-fill {
+    background: var(--accent);
+  }
+  .btn-magnetic-outline:hover .btn-magnetic-fill {
+    transform: translateY(0);
+  }
+  .btn-magnetic-outline:hover .btn-magnetic-text {
+    color: #ffffff;
+  }
+
+  .t-toggle{display:flex;border-radius:var(--radius-full);overflow:hidden;border:1px solid var(--border);background:var(--surface)}
+  .t-toggle button{padding:5px 9px;border:none;background:transparent;color:var(--muted);cursor:pointer;line-height:0;transition:background .15s,color .15s}
+  .t-toggle button svg{width:15px;height:15px}
+  .t-toggle button[aria-pressed="true"]{background:var(--surface-2);color:var(--accent)}
+
+  /* ── Page hero & sections ── */
+  .pg-hero{padding:100px 24px 60px;max-width:900px;margin-inline:auto}
+  .pg-badge{display:inline-block;padding:5px 14px;border-radius:var(--radius-full);background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:20px}
+  .pg-h1{font-family:var(--font-display);font-size:clamp(38px,6vw,68px);font-weight:800;line-height:1.06;letter-spacing:-.03em;color:var(--text)}
+  .pg-h1 em{font-style:normal;color:var(--accent)}
+  .pg-lead{font-size:clamp(15px,2vw,19px);color:var(--muted);line-height:1.65;max-width:620px;margin-top:18px}
+  .pg-section{padding:56px 24px;max-width:900px;margin-inline:auto}
+  .pg-section h2{font-family:var(--font-display);font-size:clamp(24px,4vw,36px);font-weight:800;color:var(--text);margin-bottom:16px}
+  .pg-section p{font-size:15px;color:var(--muted);line-height:1.7;margin-bottom:14px}
+  
+  .spec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-top:28px}
+  .spec-card{padding:22px;border-radius:var(--radius-lg);background:color-mix(in srgb,var(--surface) 82%,transparent);border:1px solid var(--border);backdrop-filter:blur(12px)}
+  .spec-val{font-family:var(--font-display);font-size:30px;font-weight:800;color:var(--accent)}
+  .spec-key{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin-top:4px}
+  
+  .uc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin-top:28px}
+  .uc-card{padding:22px 24px;border-radius:var(--radius-lg);background:color-mix(in srgb,var(--surface) 82%,transparent);border:1px solid var(--border);backdrop-filter:blur(12px)}
+  .uc-icon{width:36px;height:36px;border-radius:var(--radius);background:var(--accent-soft);display:grid;place-items:center;color:var(--accent);margin-bottom:12px}
+  .uc-icon svg{width:18px;height:18px}
+  .uc-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px}
+  .uc-desc{font-size:13px;color:var(--muted);line-height:1.6}
+  
+  .cta-strip{background:var(--accent);border-radius:var(--radius-xl);padding:44px 32px;text-align:center;margin:32px 24px 64px;max-width:900px;margin-inline:auto}
+  .cta-strip h3{font-family:var(--font-display);font-size:28px;font-weight:800;color:#fff;margin-bottom:14px}
+  .cta-strip p{font-size:15px;color:rgba(255,255,255,.8);margin-bottom:22px}
+  .cta-strip .btn-magnetic {
+    margin: 4px;
+    padding: 12px 26px;
+    font-size: 14px;
+  }
+  .cta-strip .btn-magnetic-primary {
+    background: #ffffff;
+    color: var(--accent);
+  }
+  .cta-strip .btn-magnetic-primary .btn-magnetic-fill {
+    background: var(--text, #030213);
+  }
+  .cta-strip .btn-magnetic-primary:hover .btn-magnetic-text {
+    color: #ffffff;
+  }
+  .cta-strip .btn-magnetic-outline {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+  .cta-strip .btn-magnetic-outline .btn-magnetic-fill {
+    background: #ffffff;
+  }
+  .cta-strip .btn-magnetic-outline:hover .btn-magnetic-text {
+    color: var(--accent);
+  }
+
+  /* ── Footer ── */
+  .lp-footer{background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(16px);border-top:1px solid var(--border);padding:56px 32px 32px;margin-top:64px}
+  .lp-footer-inner{max-width:1120px;margin-inline:auto;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:40px}
+  .lp-footer-brand img{height:44px;width:auto;margin-bottom:14px;display:block}
+  .lp-footer-tagline{font-size:13.5px;color:var(--muted);line-height:1.6;max-width:240px}
+  .lp-footer-address{font-size:12.5px;color:var(--faint);margin-top:16px;line-height:1.7}
+  .lp-footer-col h4{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
+  .lp-footer-col a{display:block;font-size:13.5px;color:var(--muted);text-decoration:none;margin-bottom:9px;transition:color .15s}
+  .lp-footer-col a:hover{color:var(--text)}
+  .lp-footer-bottom{max-width:1120px;margin:40px auto 0;padding-top:20px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+  .lp-footer-copy{font-size:12.5px;color:var(--faint)}
+
+  @media(max-width:600px){
+    .lp-footer-inner{grid-template-columns:1fr 1fr}
+    .lp-footer-brand{grid-column:1/-1}
+    .lp-nav-links{display:none}
+  }
+</style>
+{% endblock %}
+
+{% block nav %}
+<!-- Standalone Logo Top Left -->
+<a href="/" class="logo-standalone" style="position: fixed; top: 10px; left: 32px; z-index: 1010; transition: transform 0.2s;">
+  <img src="/static/img/logo.svg?v=3" alt="Together" style="height: 40px; width: auto;">
+</a>
+
+<nav class="lp-nav" role="navigation" aria-label="Main navigation">
+  
+
+  <div class="lp-nav-links">
+    <div class="lp-dd">
+      <button class="lp-dd-btn" aria-haspopup="true">Products
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="lp-dd-menu">
+        <a href="/products/signlens" class="lp-dd-item">
+          <span class="lp-dd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></span>
+          <span><div class="lp-dd-label">SignLens</div><div class="lp-dd-desc">Real-time sign recognition → text & voice</div></span>
+        </a>
+        <a href="/products/signbridge" class="lp-dd-item">
+          <span class="lp-dd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg></span>
+          <span><div class="lp-dd-label">SignBridge</div><div class="lp-dd-desc">Arabic & English → ESL guidance</div></span>
+        </a>
+        <a href="/products/openhands" class="lp-dd-item">
+          <span class="lp-dd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+          <span><div class="lp-dd-label">OpenHands</div><div class="lp-dd-desc">Enterprise live translation overlay</div></span>
+        </a>
+      </div>
+    </div>
+
+    <div class="lp-dd">
+      <button class="lp-dd-btn" aria-haspopup="true">Languages
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="lp-dd-menu">
+        <a href="/languages/asl" class="lp-dd-item">
+          <span class="lp-dd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z"/></svg></span>
+          <span><div class="lp-dd-label">ASL</div><div class="lp-dd-desc">American Sign Language — 250 classes</div></span>
+        </a>
+        <a href="/languages/arsl" class="lp-dd-item">
+          <span class="lp-dd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z"/></svg></span>
+          <span><div class="lp-dd-label">ArSL</div><div class="lp-dd-desc">Arabic Sign Language — 20 classes</div></span>
+        </a>
+      </div>
+    </div>
+
+    <a href="/resources" class="lp-nav-link">Resources</a>
+
+    <div class="lp-dd">
+      <button class="lp-dd-btn" aria-haspopup="true">Our Team
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="lp-dd-menu">
+        <a href="/about" class="lp-dd-item">
+          <span class="lp-dd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+          <span><div class="lp-dd-label">About Us</div><div class="lp-dd-desc">Our story and mission</div></span>
+        </a>
+        <a href="/partnership" class="lp-dd-item">
+          <span class="lp-dd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 16s-1.5-2-4-2-4 2-4 2"/><circle cx="12" cy="8" r="4"/></svg></span>
+          <span><div class="lp-dd-label">Partnership</div><div class="lp-dd-desc">Work with us</div></span>
+        </a>
+        <a href="/contact" class="lp-dd-item">
+          <span class="lp-dd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
+          <span><div class="lp-dd-label">Contact Us</div><div class="lp-dd-desc">Get in touch</div></span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="lp-nav-end">
+    <a href="/demo" class="btn-magnetic btn-magnetic-outline" data-cursor="Demo">
+      <span class="btn-magnetic-fill"></span>
+      <span class="btn-magnetic-text">Book a Demo</span>
+    </a>
+    <a href="/login" class="btn-magnetic btn-magnetic-primary" data-cursor="Enter">
+      <span class="btn-magnetic-fill"></span>
+      <span class="btn-magnetic-text">Together Login</span>
+    </a>
+    <span class="lp-nav-sep" aria-hidden="true"></span>
+    <div class="t-toggle" role="group" aria-label="Color theme">
+      <button type="button" data-theme-set="light" aria-pressed="false" aria-label="Light theme" title="Light">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.4 1.4M17.6 17.6 19 19M19 5l-1.4 1.4M6.4 17.6 5 19"/></svg>
+      </button>
+      <button type="button" data-theme-set="dark" aria-pressed="true" aria-label="Dark theme" title="Dark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A8 8 0 1 1 11.2 3 6.2 6.2 0 0 0 21 12.8Z"/></svg>
+      </button>
+    </div>
+  </div>
+</nav>
+{% endblock %}
+
+{% block footer %}
+<footer class="lp-footer">
+  <div class="lp-footer-inner">
+    <div class="lp-footer-brand">
+      <img src="/static/img/logo.svg?v=3" alt="Together" style="height:44px;width:auto;" onerror="this.style.display='none'">
+      <p class="lp-footer-tagline">AI-powered sign language translation for the Deaf and Hard-of-Hearing community. One world, every language.</p>
+      <p class="lp-footer-address">Together Technologies<br>123 Innovation Drive, Suite 400<br>San Francisco, CA 94107<br>hello@together.app</p>
+    </div>
+    <div class="lp-footer-col">
+      <h4>Products</h4>
+      <a href="/products/signlens">SignLens</a>
+      <a href="/products/signbridge">SignBridge</a>
+      <a href="/products/openhands">OpenHands</a>
+    </div>
+    <div class="lp-footer-col">
+      <h4>Menu</h4>
+      <a href="/resources">Resources</a>
+      <a href="/about">About Us</a>
+      <a href="/partnership">Partnership</a>
+      <a href="/demo">Book a Demo</a>
+      <a href="/login">Login</a>
+    </div>
+    <div class="lp-footer-col">
+      <h4>Contact</h4>
+      <a href="/contact">Contact Us</a>
+      <a href="mailto:hello@together.app">hello@together.app</a>
+      <a href="/languages/asl">ASL</a>
+      <a href="/languages/arsl">ArSL</a>
+    </div>
+  </div>
+  <div class="lp-footer-bottom">
+    <span class="lp-footer-copy">© 2026 Together Technologies. All rights reserved.</span>
+    <span class="lp-footer-copy">Built for the Deaf and Hard-of-Hearing community worldwide.</span>
+  </div>
+</footer>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  var c=document.getElementById('sf-canvas');if(!c)return;
+  var ctx=c.getContext('2d'),rm=matchMedia('(prefers-reduced-motion:reduce)');
+  var W,H,dots=[],mx=-999,my=-999,raf=0,N=60,DIST=140,REPEL=90,SPEED=0.35;
+  function resize(){W=c.width=innerWidth;H=c.height=innerHeight}
+  function mkDot(){return{x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*SPEED,vy:(Math.random()-.5)*SPEED,col:Math.random()<.65?'#1f8a82':'#e2b483',r:Math.random()*1.4+1}}
+  function init(){resize();dots=[];for(var i=0;i<N;i++)dots.push(mkDot())}
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    for(var i=0;i<dots.length;i++){var d=dots[i];var dx=d.x-mx,dy=d.y-my,ds=dx*dx+dy*dy;if(ds<REPEL*REPEL&&ds>0){var f=(REPEL*REPEL-ds)/(REPEL*REPEL)*.9;d.vx+=dx/Math.sqrt(ds)*f*.04;d.vy+=dy/Math.sqrt(ds)*f*.04}d.vx*=.99;d.vy*=.99;d.x+=d.vx;d.y+=d.vy;if(d.x<0||d.x>W)d.vx*=-1;if(d.y<0||d.y>H)d.vy*=-1}
+    for(var i=0;i<dots.length;i++)for(var j=i+1;j<dots.length;j++){var dx=dots[i].x-dots[j].x,dy=dots[i].y-dots[j].y,d2=Math.sqrt(dx*dx+dy*dy);if(d2<DIST){ctx.strokeStyle='rgba(31,138,130,'+(1-d2/DIST)*.28+')';ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(dots[i].x,dots[i].y);ctx.lineTo(dots[j].x,dots[j].y);ctx.stroke()}}
+    for(var i=0;i<dots.length;i++){var d=dots[i];ctx.fillStyle=d.col+(document.documentElement.getAttribute('data-theme')==='light'?'99':'cc');ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill()}
+    if(!document.hidden&&!rm.matches)raf=requestAnimationFrame(draw);
+  }
+  function start(){if(!raf&&!document.hidden&&!rm.matches)raf=requestAnimationFrame(draw)}
+  function stop(){if(raf){cancelAnimationFrame(raf);raf=0}}
+  addEventListener('resize',function(){resize()});
+  addEventListener('pointermove',function(e){mx=e.clientX;my=e.clientY},{passive:true});
+  document.addEventListener('visibilitychange',function(){document.hidden?stop():start()});
+  init();start();
+})();
+</script>
+{% endblock %}

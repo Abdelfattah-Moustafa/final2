@@ -1,0 +1,1169 @@
+{% extends "base.html" %}
+{% block title %}Together{% endblock %}
+{% block main_style %}padding-top: 0;{% endblock %}
+
+{% block head %}
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+<!-- Three.js for HeroCanvas -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<style>
+  body {
+    background: #f8f8f6 !important;
+    color: #030213 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    overflow-x: hidden;
+  }
+  
+  #main-content {
+    max-width: 100% !important;
+    background: transparent !important;
+    padding-top: 0 !important;
+  }
+
+  /* ── Background Gradients ── */
+  .bg-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: -10;
+    pointer-events: none;
+    background: 
+      radial-gradient(circle at 15% 10%, rgba(255,255,255,1), transparent 28%),
+      radial-gradient(circle at 80% 20%, rgba(230,234,238,0.75), transparent 30%),
+      linear-gradient(180deg, #f8f8f6, #ececea);
+  }
+  /* ── Liquid Glass Ribbon ── */
+  .glass-ribbon {
+    position: relative;
+    background: rgba(255, 255, 255, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 
+      0 20px 50px rgba(0, 0, 0, 0.04),
+      inset 0 1px 2px rgba(255, 255, 255, 0.7),
+      inset 0 -1px 1px rgba(0, 0, 0, 0.02);
+    backdrop-filter: blur(42px);
+    -webkit-backdrop-filter: blur(42px);
+    transition: background 0.7s, border-color 0.7s;
+  }
+  .glass-ribbon:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+  .glass-ribbon::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(600px circle at var(--sheen-x, 0%) var(--sheen-y, 0%), rgba(255,255,255,0.4), transparent 40%);
+    mix-blend-mode: overlay;
+    z-index: 0;
+    transition: opacity 0.5s;
+    opacity: 0.7;
+  }
+
+  /* ── Logo ── */
+  .logo-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: #030213;
+  }
+  .logo-icon {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border-radius: 1rem;
+    border: 1px solid rgba(0,0,0,0.1);
+    background: rgba(255,255,255,0.7);
+    backdrop-filter: blur(20px);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+  }
+  .logo-text {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-family: 'Bricolage Grotesque', sans-serif;
+  }
+
+  /* ── Navigation ── */
+  .lp-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: center;
+  }
+  .lp-nav-inner {
+    width: 100%;
+    max-width: 1280px;
+    height: 56px;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+  }
+  .lp-nav-links {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+  }
+  .lp-nav-link {
+    font-size: 14px;
+    font-weight: 500;
+    color: #030213;
+    text-decoration: none;
+    transition: opacity 0.2s;
+    position: relative;
+    cursor: pointer;
+  }
+  .lp-nav-link:hover {
+    opacity: 0.7;
+  }
+
+  /* ── Custom Dropdowns ── */
+  .nav-dropdown {
+    position: relative;
+  }
+  .nav-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 12px);
+    left: 50%;
+    transform: translateX(-50%) translateY(-10px);
+    opacity: 0;
+    pointer-events: none;
+    background: rgba(255,255,255,0.9);
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 1.5rem;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.08);
+    backdrop-filter: blur(24px);
+    padding: 12px;
+    min-width: 240px;
+    transition: opacity 0.25s, transform 0.25s;
+    z-index: 100;
+  }
+  .nav-dropdown:hover .nav-dropdown-menu {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+  }
+  .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 1rem;
+    text-decoration: none;
+    color: #030213;
+    transition: background 0.2s;
+  }
+  .dropdown-item:hover {
+    background: rgba(0,0,0,0.03);
+  }
+  .dropdown-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: rgba(31,138,130,0.1);
+    color: #1f8a82;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .dropdown-title {
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+  .dropdown-desc {
+    font-size: 11px;
+    color: #717182;
+    margin-top: 1px;
+  }
+
+  /* ── Magnetic Buttons ── */
+  .btn-magnetic {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 28px;
+    border-radius: 9999px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    overflow: hidden;
+    transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+    z-index: 1;
+  }
+  .btn-magnetic-text {
+    position: relative;
+    z-index: 10;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: color 0.45s cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  .btn-magnetic-fill {
+    position: absolute;
+    inset: 0;
+    transform: translateY(101%);
+    transition: transform 0.45s cubic-bezier(0.65, 0, 0.35, 1);
+    border-radius: inherit;
+    z-index: 1;
+  }
+  .btn-magnetic-primary {
+    background: #030213;
+    color: #ffffff;
+  }
+  .btn-magnetic-primary .btn-magnetic-fill {
+    background: #ffffff;
+  }
+  .btn-magnetic-primary:hover .btn-magnetic-fill {
+    transform: translateY(0);
+  }
+  .btn-magnetic-primary:hover .btn-magnetic-text {
+    color: #030213;
+  }
+  .btn-magnetic-outline {
+    background: rgba(255, 255, 255, 0.55);
+    color: #030213;
+    border: 1px solid rgba(3, 2, 19, 0.15);
+    backdrop-filter: blur(20px);
+  }
+  .btn-magnetic-outline .btn-magnetic-fill {
+    background: #030213;
+  }
+  .btn-magnetic-outline:hover .btn-magnetic-fill {
+    transform: translateY(0);
+  }
+  .btn-magnetic-outline:hover .btn-magnetic-text {
+    color: #ffffff;
+  }
+
+  /* ── Hero ── */
+  .hero-section {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    padding: 120px 24px 80px;
+  }
+  .hero-dark-split {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 46%;
+    background: #050505;
+    z-index: 1;
+  }
+  @media(max-width: 768px) {
+    .hero-dark-split {
+      display: none;
+    }
+  }
+  .hero-canvas-container {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 46%;
+    z-index: 2;
+  }
+  @media(max-width: 768px) {
+    .hero-canvas-container {
+      display: none;
+    }
+  }
+  .hero-content {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    max-width: 1280px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 40px;
+    align-items: center;
+  }
+  @media(max-width: 768px) {
+    .hero-content {
+      grid-template-columns: 1fr;
+    }
+  }
+  .hero-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: #717182;
+    border: 1px solid rgba(0,0,0,0.08);
+    background: rgba(255,255,255,0.55);
+    border-radius: 9999px;
+    backdrop-filter: blur(10px);
+    margin-bottom: 24px;
+  }
+  .hero-title {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-size: clamp(48px, 6.5vw, 84px);
+    font-weight: 700;
+    line-height: 0.92;
+    letter-spacing: -0.04em;
+    color: #030213;
+    margin-bottom: 28px;
+  }
+  .hero-desc {
+    font-size: clamp(16px, 1.8vw, 20px);
+    line-height: 1.6;
+    color: #717182;
+    max-width: 540px;
+    margin-bottom: 36px;
+  }
+  .hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  /* ── Live Translation Card ── */
+  .hero-glass-card {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 2rem;
+    padding: 24px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 30px 60px rgba(0,0,0,0.25);
+    max-width: 420px;
+    margin-left: auto;
+  }
+  .live-card-inner {
+    background: #070707;
+    border-radius: 1.5rem;
+    padding: 24px;
+    color: #ffffff;
+  }
+  .live-indicator {
+    font-size: 13px;
+    color: rgba(255,255,255,0.45);
+    margin-bottom: 48px;
+  }
+  .live-translation-text {
+    font-size: 44px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    font-family: 'Bricolage Grotesque', sans-serif;
+  }
+  .live-translation-caption {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 1rem;
+    padding: 16px;
+    font-size: 14px;
+    color: rgba(255,255,255,0.75);
+    backdrop-filter: blur(10px);
+  }
+
+  /* ── Marquee ── */
+  .ticker-section {
+    border-top: 1px solid rgba(0,0,0,0.08);
+    border-bottom: 1px solid rgba(0,0,0,0.08);
+    background: rgba(255,255,255,0.25);
+    padding: 24px 0;
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .ticker-wrap {
+    display: flex;
+    width: 200%;
+    animation: marquee 25s linear infinite;
+  }
+  .ticker-wrap.reverse {
+    animation-direction: reverse;
+  }
+  .ticker-item {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #030213;
+    padding: 0 40px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  @keyframes marquee {
+    0% { transform: translate3d(0, 0, 0); }
+    100% { transform: translate3d(-50%, 0, 0); }
+  }
+
+  /* ── Sections ── */
+  .section-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 100px 24px;
+  }
+  .section-eyebrow {
+    font-family: monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: #717182;
+    margin-bottom: 16px;
+  }
+  .section-title {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-size: clamp(36px, 4.5vw, 60px);
+    font-weight: 700;
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    color: #030213;
+  }
+
+  /* ── Feature Grid ── */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 18px;
+    margin-top: 56px;
+  }
+  @media(max-width: 900px) {
+    .feature-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .feature-card {
+    position: relative;
+    background: rgba(255, 255, 255, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-radius: 1.8rem;
+    padding: 32px;
+    overflow: hidden;
+    backdrop-filter: blur(20px);
+    transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.4s;
+    cursor: pointer;
+  }
+  .feature-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.05);
+  }
+  .feature-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: #070707;
+    transform: translateY(101%);
+    transition: transform 0.5s cubic-bezier(0.65, 0, 0.35, 1);
+    z-index: 1;
+  }
+  .feature-card:hover::before {
+    transform: translateY(0);
+  }
+  .feature-card-content {
+    position: relative;
+    z-index: 2;
+    transition: color 0.3s;
+  }
+  .feature-card:hover .feature-card-content {
+    color: #ffffff;
+  }
+  .feature-icon-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 48px;
+  }
+  .feature-icon {
+    width: 24px;
+    height: 24px;
+    stroke-width: 1.5;
+  }
+  .feature-tag {
+    font-family: monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: #717182;
+  }
+  .feature-card:hover .feature-tag {
+    color: rgba(255,255,255,0.45);
+  }
+  .feature-title {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+  .feature-desc {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: #717182;
+  }
+  .feature-card:hover .feature-desc {
+    color: rgba(255,255,255,0.7);
+  }
+  .col-span-3 {
+    grid-span: 3;
+    grid-column: span 3;
+  }
+  .col-span-2 {
+    grid-span: 2;
+    grid-column: span 2;
+  }
+  @media(max-width: 900px) {
+    .col-span-3, .col-span-2 {
+      grid-column: span 1;
+    }
+  }
+
+  /* ── Language ── */
+  .lang-grid {
+    display: grid;
+    grid-template-columns: 0.9fr 1.1fr;
+    gap: 48px;
+    align-items: center;
+  }
+  @media(max-width: 768px) {
+    .lang-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .lang-card {
+    background: rgba(255,255,255,0.25);
+    border: 1px solid rgba(255,255,255,0.6);
+    border-radius: 2rem;
+    padding: 40px;
+    backdrop-filter: blur(20px);
+  }
+  .lang-mini-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .lang-box-ar {
+    background: #000000;
+    color: #ffffff;
+    border-radius: 1.5rem;
+    padding: 24px;
+  }
+  .lang-box-esl {
+    background: rgba(255,255,255,0.5);
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 1.5rem;
+    padding: 24px;
+  }
+
+  /* ── Field Notes ── */
+  .notes-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border-radius: 2rem;
+    overflow: hidden;
+    border: 1px solid rgba(0,0,0,0.08);
+    margin-top: 56px;
+    background: rgba(0,0,0,0.08);
+    gap: 1px;
+  }
+  @media(max-width: 768px) {
+    .notes-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .note-card {
+    background: rgba(255,255,255,0.55);
+    backdrop-filter: blur(20px);
+    padding: 32px;
+    min-height: 280px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: background 0.3s;
+    cursor: pointer;
+  }
+  .note-card:hover {
+    background: rgba(255,255,255,0.8);
+  }
+  .note-meta {
+    display: flex;
+    justify-content: space-between;
+    font-family: monospace;
+    font-size: 11px;
+    color: #717182;
+  }
+  .note-title {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+  .note-body {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: #717182;
+  }
+
+  /* ── Simple Workflow ── */
+  .wf-section {
+    background: #050505;
+    color: #ffffff;
+    padding: 100px 24px;
+  }
+  .wf-section .section-title {
+    color: #ffffff;
+  }
+  .wf-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border-radius: 2rem;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.1);
+    margin-top: 56px;
+    background: rgba(255,255,255,0.1);
+    gap: 1px;
+  }
+  @media(max-width: 768px) {
+    .wf-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .wf-card {
+    background: rgba(255,255,255,0.03);
+    padding: 32px;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: background 0.3s;
+  }
+  .wf-card:hover {
+    background: rgba(255,255,255,0.08);
+  }
+  .wf-num {
+    font-family: monospace;
+    font-size: 12px;
+    color: rgba(255,255,255,0.3);
+  }
+  .wf-text {
+    font-size: 19px;
+    font-weight: 500;
+  }
+
+  /* ── CTA ── */
+  .cta-section {
+    text-align: center;
+    padding: 120px 24px;
+  }
+  .cta-title {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-size: clamp(48px, 6.5vw, 84px);
+    font-weight: 700;
+    line-height: 0.92;
+    letter-spacing: -0.04em;
+    color: #030213;
+    max-width: 900px;
+    margin: 0 auto 40px;
+  }
+
+  /* ── Footer ── */
+  .lp-footer {
+    border-top: 1px solid rgba(0,0,0,0.08);
+    padding: 40px 24px;
+  }
+  .lp-footer-inner {
+    max-width: 1280px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+</style>
+{% endblock %}
+
+{% block nav %}
+<!-- Standalone Logo Top Left -->
+<a href="/" class="logo-standalone" style="position: fixed; top: 20px; left: 32px; z-index: 1010; transition: transform 0.2s;">
+  <img src="/static/img/logo.svg?v=3" alt="Together" style="height: 44px; width: auto;">
+</a>
+
+<nav class="lp-nav">
+  <div class="lp-nav-inner glass-ribbon">
+    
+    
+    <div class="lp-nav-links hide-mobile">
+      <div class="nav-dropdown">
+        <span class="lp-nav-link">Products</span>
+        <div class="nav-dropdown-menu">
+          <a href="/products/signlens" class="dropdown-item">
+            <span class="dropdown-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            </span>
+            <div>
+              <div class="dropdown-title">SignLens</div>
+              <div class="dropdown-desc">Real-time sign recognition</div>
+            </div>
+          </a>
+          <a href="/products/signbridge" class="dropdown-item">
+            <span class="dropdown-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+            </span>
+            <div>
+              <div class="dropdown-title">SignBridge</div>
+              <div class="dropdown-desc">Arabic & English → ESL</div>
+            </div>
+          </a>
+          <a href="/products/openhands" class="dropdown-item">
+            <span class="dropdown-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+            <div>
+              <div class="dropdown-title">OpenHands</div>
+              <div class="dropdown-desc">Enterprise live overlay</div>
+            </div>
+          </a>
+        </div>
+      </div>
+      
+      <div class="nav-dropdown">
+        <span class="lp-nav-link">Languages</span>
+        <div class="nav-dropdown-menu">
+          <a href="/languages/asl" class="dropdown-item">
+            <span class="dropdown-icon">🌐</span>
+            <div>
+              <div class="dropdown-title">ASL</div>
+              <div class="dropdown-desc">American Sign Language</div>
+            </div>
+          </a>
+          <a href="/languages/arsl" class="dropdown-item">
+            <span class="dropdown-icon">🌐</span>
+            <div>
+              <div class="dropdown-title">ArSL</div>
+              <div class="dropdown-desc">Arabic Sign Language</div>
+            </div>
+          </a>
+        </div>
+      </div>
+      
+      <a href="/resources" class="lp-nav-link" data-cursor="Read">Resources</a>
+      <a href="/about" class="lp-nav-link" data-cursor="Read">About Us</a>
+      <a href="/partnership" class="lp-nav-link" data-cursor="Join">Partnership</a>
+      <a href="/contact" class="lp-nav-link" data-cursor="Write">Contact Us</a>
+    </div>
+
+    <div>
+      <a href="/dashboard" class="btn-magnetic btn-magnetic-primary" data-cursor="Enter">
+        <span class="btn-magnetic-fill"></span>
+        <span class="btn-magnetic-text">Open dashboard</span>
+      </a>
+    </div>
+  </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="bg-canvas"></div>
+<div class="studio-shades">
+  <div class="studio-shades-edge-left"></div>
+  <div class="studio-shades-edge-right"></div>
+  <div class="studio-shades-edge-top"></div>
+  <div class="studio-shades-edge-bottom"></div>
+  <div class="studio-shades-ambient-left"></div>
+  <div class="studio-shades-ambient-right"></div>
+  <div class="studio-shades-contrast"></div>
+</div>
+
+<!-- HERO -->
+<section class="hero-section">
+  <div class="hero-dark-split"></div>
+  <div class="hero-canvas-container" id="hero-canvas-container">
+    <!-- Three.js Canvas gets injected here by Javascript -->
+  </div>
+  
+  <div class="hero-content">
+    <div>
+      <div class="hero-kicker">
+        <span>Built for Arabic conversations</span>
+        <span class="hide-mobile" style="margin-left:12px; font-family: monospace; border-left: 1px solid rgba(0,0,0,0.12); padding-left: 12px;">30.0444° N, 31.2357° E</span>
+      </div>
+      <h1 class="hero-title">Sign, speak, read — together.</h1>
+      <p class="hero-desc">
+        A minimal translation layer for Egyptian Sign Language and Arabic: from hands to text, voice to signs, and meetings where nobody is left outside the conversation.
+      </p>
+      <div class="hero-actions">
+        <a href="/dashboard" class="btn-magnetic btn-magnetic-primary" data-cursor="Enter">
+          <span class="btn-magnetic-fill"></span>
+          <span class="btn-magnetic-text">Launch dashboard <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg></span>
+        </a>
+        <a href="#products" class="btn-magnetic btn-magnetic-outline" data-cursor="Scroll">
+          <span class="btn-magnetic-fill"></span>
+          <span class="btn-magnetic-text">Explore our products</span>
+        </a>
+      </div>
+    </div>
+    
+    <div class="hide-mobile">
+      <div class="hero-glass-card">
+        <div class="live-card-inner" data-cursor="Live">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <img src="/static/img/logo-white.svg?v=3" alt="Together" style="height:36px;width:auto;">
+          </div>
+          <div class="live-card-inner-body" style="margin-top: 60px;">
+            <div class="live-indicator">Live translation</div>
+            <div class="live-translation-text">إزيك؟</div>
+            <div class="live-translation-caption">How are you?</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MARQUEE TICKER -->
+<section class="ticker-section">
+  <div class="ticker-wrap">
+    <div class="ticker-item">SIGNLENS</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">SIGNBRIDGE</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">OPENHANDS</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">SIGN → TEXT</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">SIGN → SPEECH</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">العربية</div>
+    <!-- Duplicate for smooth marquee effect -->
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">SIGNLENS</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">SIGNBRIDGE</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">OPENHANDS</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">SIGN → TEXT</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">SIGN → SPEECH</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">العربية</div>
+  </div>
+</section>
+
+<!-- PRODUCTS -->
+<section id="products" class="section-container">
+  <p class="section-eyebrow">( 01 ) — Three products</p>
+  <h2 class="section-title">One platform, every direction.</h2>
+  
+  <div class="feature-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <a href="/products/signlens" class="feature-card" style="text-decoration:none; color:inherit;">
+      <div class="feature-card-content">
+        <div class="feature-icon-box">
+          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <span class="feature-tag">PRODUCT 01</span>
+        </div>
+        <h3 class="feature-title">SignLens</h3>
+        <p class="feature-desc">Real-time kinetic recognition. Translates Egyptian Sign Language and Arabic into text and natural voice.</p>
+      </div>
+    </a>
+    
+    <a href="/products/signbridge" class="feature-card" style="text-decoration:none; color:inherit;">
+      <div class="feature-card-content">
+        <div class="feature-icon-box">
+          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+          <span class="feature-tag">PRODUCT 02</span>
+        </div>
+        <h3 class="feature-title">SignBridge</h3>
+        <p class="feature-desc">Reverse translation engine. Converts spoken or typed Arabic and English into structured Egyptian Sign Language guidance.</p>
+      </div>
+    </a>
+    
+    <a href="/products/openhands" class="feature-card" style="text-decoration:none; color:inherit;">
+      <div class="feature-card-content">
+        <div class="feature-icon-box">
+          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span class="feature-tag">PRODUCT 03</span>
+        </div>
+        <h3 class="feature-title">OpenHands</h3>
+        <p class="feature-desc">Enterprise video overlay. Injects live, bidirectional translations into your communication platforms for Arabic and Egyptian Sign Language.</p>
+      </div>
+    </a>
+  </div>
+</section>
+
+<!-- LANGUAGE -->
+<section id="language" class="section-container" style="padding-top:0;">
+  <div class="lang-grid">
+    <div>
+      <p class="section-eyebrow">( 02 ) — Language first</p>
+      <h2 class="section-title">Designed for Arabic and Egyptian Sign Language.</h2>
+    </div>
+    <div class="lang-card">
+      <div class="lang-mini-grid">
+        <div class="lang-box-ar">
+          <p style="font-size:12px; opacity:0.5; margin-bottom: 24px;">Arabic output</p>
+          <p style="font-size:36px; font-weight:700; font-family: 'Bricolage Grotesque', sans-serif;">مرحباً</p>
+        </div>
+        <div class="lang-box-esl">
+          <p style="font-size:12px; color:#717182; margin-bottom: 24px;">Egyptian Sign Language</p>
+          <p style="font-size:36px; font-weight:700; color:#030213; font-family: 'Bricolage Grotesque', sans-serif;">ESL</p>
+        </div>
+      </div>
+      <p style="font-size: 14px; line-height: 1.6; color:#717182;">
+        Together treats language support as a first-class product choice, not a footnote — Arabic text, Arabic speech, and Egyptian signing contexts sit at the center of the experience.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- FIELD NOTES -->
+<section id="notes" class="section-container" style="padding-top:0;">
+  <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:16px;">
+    <div>
+      <p class="section-eyebrow">( 03 ) — Field notes, unfiltered</p>
+      <h2 class="section-title">From the studio.</h2>
+    </div>
+    <span style="font-family: monospace; font-size:11px; text-transform:uppercase; letter-spacing:0.15em; color:#717182;">A column on accessible design</span>
+  </div>
+  
+  <div class="notes-grid">
+    <div class="note-card">
+      <div class="note-meta">
+        <span>N.001</span>
+        <span>12 · MAY · 26</span>
+      </div>
+      <div>
+        <h3 class="note-title">On hands as a first language</h3>
+        <p class="note-body">Captions are not an afterthought. We design the signing space first, then let text and voice follow its rhythm.</p>
+      </div>
+    </div>
+    
+    <div class="note-card">
+      <div class="note-meta">
+        <span>N.002</span>
+        <span>28 · MAY · 26</span>
+      </div>
+      <div>
+        <h3 class="note-title">Arabic, written right to left</h3>
+        <p class="note-body">Egyptian signing and Arabic script share a room here — every layout respects direction, diacritics, and tone.</p>
+      </div>
+    </div>
+    
+    <div class="note-card">
+      <div class="note-meta">
+        <span>N.003</span>
+        <span>09 · JUN · 26</span>
+      </div>
+      <div>
+        <h3 class="note-title">Silence is a setting, not a wall</h3>
+        <p class="note-body">A meeting overlay should disappear into the conversation. The best translation is the one nobody has to wait for.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SIMPLE WORKFLOW -->
+<section class="wf-section">
+  <div class="section-container" style="padding-top:0; padding-bottom:0;">
+    <p class="section-eyebrow" style="color: rgba(255,255,255,0.45);">( 04 ) — Simple workflow</p>
+    <h2 class="section-title" style="margin-bottom: 56px;">Capture the intent. Choose the output. Share it instantly.</h2>
+    
+    <div class="wf-grid">
+      <div class="wf-card">
+        <span class="wf-num">01</span>
+        <p class="wf-text">Camera, microphone, or text input</p>
+      </div>
+      <div class="wf-card">
+        <span class="wf-num">02</span>
+        <p class="wf-text">Arabic / English processing</p>
+      </div>
+      <div class="wf-card">
+        <span class="wf-num">03</span>
+        <p class="wf-text">Text, speech, sign guide, or meeting captions</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CLOSING MARQUEE -->
+<section class="ticker-section" style="background: rgba(255,255,255,0.15);">
+  <div class="ticker-wrap reverse">
+    <div class="ticker-item">MAKE EVERY ROOM ACCESSIBLE</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">بدون حواجز</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">TOGETHER</div>
+    <!-- Duplicate for smooth marquee effect -->
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">MAKE EVERY ROOM ACCESSIBLE</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">بدون حواجز</div>
+    <div class="ticker-item">●</div>
+    <div class="ticker-item">TOGETHER</div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <h2 class="cta-title">Make every room accessible.</h2>
+  <div style="margin-top: 40px;">
+    <a href="/dashboard" class="btn-magnetic btn-magnetic-primary" data-cursor="Enter" style="padding: 16px 36px; font-size:16px;">
+      <span class="btn-magnetic-fill"></span>
+      <span class="btn-magnetic-text">Open the dashboard <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg></span>
+    </a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="lp-footer">
+  <div class="lp-footer-inner">
+    <a href="/" class="logo-box">
+      <img src="/static/img/logo.svg?v=3" alt="Together" style="height:44px;width:auto;">
+    </a>
+    <span class="lp-footer-copy">© 2026 Together — Cairo · Alexandria</span>
+  </div>
+</footer>
+
+<script>
+  // ── Liquid Glass Ribbon Sheen Effect ──
+  document.addEventListener('pointermove', function(e) {
+    const ribbons = document.querySelectorAll('.glass-ribbon');
+    ribbons.forEach(ribbon => {
+      const rect = ribbon.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      ribbon.style.setProperty('--sheen-x', x + '%');
+      ribbon.style.setProperty('--sheen-y', y + '%');
+    });
+  });
+
+  // ── Hero WebGL ThreeJS Canvas Integration ──
+  (function() {
+    const container = document.getElementById('hero-canvas-container');
+    if (!container || typeof THREE === 'undefined') return;
+
+    const canvas = document.createElement('canvas');
+    canvas.style.position = 'absolute';
+    canvas.style.inset = '0';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    container.appendChild(canvas);
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: true,
+      powerPreference: "high-performance",
+    });
+    
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    camera.position.z = 5;
+
+    const group = new THREE.Group();
+    scene.add(group);
+
+    // Optimized Geometry and Material
+    const icosahedronGeo = new THREE.IcosahedronGeometry(1.35, 3);
+    const glassMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.2,
+    });
+    const glass = new THREE.Mesh(icosahedronGeo, glassMat);
+    group.add(glass);
+
+    const ringMaterial = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.16,
+    });
+
+    const torusGeos = [];
+    for (let i = 0; i < 3; i += 1) {
+      const torusGeo = new THREE.TorusGeometry(1.7 + i * 0.28, 0.004, 8, 128);
+      const edgesGeo = new THREE.EdgesGeometry(torusGeo);
+      torusGeos.push(edgesGeo);
+      
+      const ring = new THREE.LineSegments(edgesGeo, ringMaterial);
+      ring.rotation.x = i * 0.7;
+      ring.rotation.y = i * 0.45;
+      group.add(ring);
+      torusGeo.dispose();
+    }
+
+    const dots = new THREE.BufferGeometry();
+    const count = 700;
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i += 1) {
+      const radius = 1.9 + Math.random() * 1.6;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+      positions[i * 3 + 2] = radius * Math.cos(phi);
+    }
+    dots.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const pointsMat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.012,
+      transparent: true,
+      opacity: 0.5,
+    });
+    const points = new THREE.Points(dots, pointsMat);
+    group.add(points);
+
+    const resize = () => {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      renderer.setSize(w, h, false);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    };
+
+    const resizeObserver = new ResizeObserver(() => resize());
+    resizeObserver.observe(container);
+    resize();
+
+    let frame = 0;
+    let raf = 0;
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+      frame += 0.006;
+      group.rotation.y = frame * 0.35;
+      group.rotation.x = Math.sin(frame) * 0.18;
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    window.addEventListener('beforeunload', () => {
+      cancelAnimationFrame(raf);
+      resizeObserver.disconnect();
+      renderer.dispose();
+      icosahedronGeo.dispose();
+      glassMat.dispose();
+      ringMaterial.dispose();
+      torusGeos.forEach(g => g.dispose());
+      dots.dispose();
+      pointsMat.dispose();
+    });
+  })();
+</script>
+{% endblock %}

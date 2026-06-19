@@ -1,0 +1,111 @@
+{
+  "generated_at": "2026-04-20 15:20:41",
+  "config": {
+    "model_path": "C:\\Users\\abody\\OneDrive\\Desktop\\sign-language-pipeline\\models\\model.tflite",
+    "label_map_path": "C:\\Users\\abody\\OneDrive\\Desktop\\sign-language-pipeline\\models\\sign_to_prediction_index_map.json",
+    "source": "data/signs_videos",
+    "sequence_length": 60,
+    "confidence_threshold_logit": 0.8,
+    "max_samples": 0
+  },
+  "metrics": {
+    "total_video_files": 272,
+    "mapped_samples": 250,
+    "evaluated_samples": 250,
+    "skipped_unmapped": 22,
+    "failed_processing": 0,
+    "top1_accuracy": 0.624,
+    "avg_softmax_confidence": 0.5449661878198385,
+    "avg_top_logit": 6.475778267860413,
+    "acceptance_rate": 1.0,
+    "accepted_precision": 0.624,
+    "effective_accuracy": 0.624,
+    "runtime_seconds": 1021.3847258090973,
+    "seconds_per_sample": 4.085538903236389
+  },
+  "top_confusions": [
+    {
+      "true": "after",
+      "pred": "arm",
+      "count": 1
+    },
+    {
+      "true": "all",
+      "pred": "weus",
+      "count": 1
+    },
+    {
+      "true": "alligator",
+      "pred": "clean",
+      "count": 1
+    },
+    {
+      "true": "arm",
+      "pred": "open",
+      "count": 1
+    },
+    {
+      "true": "backyard",
+      "pred": "up",
+      "count": 1
+    },
+    {
+      "true": "because",
+      "pred": "for",
+      "count": 1
+    },
+    {
+      "true": "before",
+      "pred": "have",
+      "count": 1
+    },
+    {
+      "true": "beside",
+      "pred": "fine",
+      "count": 1
+    },
+    {
+      "true": "better",
+      "pred": "arm",
+      "count": 1
+    },
+    {
+      "true": "boat",
+      "pred": "book",
+      "count": 1
+    }
+  ],
+  "lowest_accuracy_classes": [
+    {
+      "label": "thankyou",
+      "support": 2,
+      "correct": 2,
+      "accuracy": 1.0
+    }
+  ],
+  "skipped_unmapped_files": [
+    "all_done.mp4",
+    "are.mp4",
+    "good_morning.mp4",
+    "good_night.mp4",
+    "goodbye.mp4",
+    "help.mp4",
+    "how.mp4",
+    "how_are_you.mp4",
+    "i_am_fine.mp4",
+    "i_am_tired.mp4",
+    "i_have_a_question.mp4",
+    "name.mp4",
+    "nice_to_meet_you.mp4",
+    "repeat.mp4",
+    "slow.mp4",
+    "sorry.mp4",
+    "understand.mp4",
+    "what_does_that_mean.mp4",
+    "what_is_your_name.mp4",
+    "where_is_the_bathroom.mp4",
+    "you.mp4",
+    "you_are_welcome.mp4"
+  ],
+  "failed_processing_files": []
+}

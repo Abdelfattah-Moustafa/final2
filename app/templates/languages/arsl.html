@@ -1,0 +1,45 @@
+{% extends "_inner_base.html" %}
+{% block title %}ArSL — Arabic Sign Language{% endblock %}
+{% block content %}
+<canvas id="sf-canvas" aria-hidden="true"></canvas>
+<div class="pg-hero">
+  <span class="pg-badge">Language</span>
+  <h1 class="pg-h1">Arabic<br><em>Sign Language.</em></h1>
+  <p class="pg-lead">ArSL (Egyptian Arabic Sign Language) is the primary sign language of Deaf communities in Egypt and widely understood across the Arab world. Together supports 20 ArSL classes via a PyTorch CNN-GRU model.</p>
+</div>
+
+<div class="pg-section">
+  <h2>About ArSL</h2>
+  <p>Arabic Sign Language refers to a family of closely related sign languages used across the Arab world. Egyptian Arabic Sign Language (ELASL or Egyptian ArSL) is the most widely documented and standardized variant, used by an estimated 1 million Deaf Egyptians. Like ASL, it is a fully developed natural language with its own grammar independent of spoken Arabic.</p>
+  <p>Significant variation exists across countries — Lebanese Sign Language, Saudi Sign Language, and Jordanian Sign Language share vocabulary but differ in regional signs. Together currently focuses on the Egyptian variant, which has the most available training data, with plans to expand to Gulf and Levantine variants.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Together's ArSL model</h2>
+  <div class="spec-grid">
+    <div class="spec-card"><div class="spec-val">20</div><div class="spec-key">Vocabulary classes</div></div>
+    <div class="spec-card"><div class="spec-val">PyTorch</div><div class="spec-key">Framework (ONNX export)</div></div>
+    <div class="spec-card"><div class="spec-val">CNN-GRU</div><div class="spec-key">Architecture</div></div>
+    <div class="spec-card"><div class="spec-val">89%</div><div class="spec-key">Top-1 accuracy (test set)</div></div>
+  </div>
+  <p style="margin-top:24px">The ArSL model uses a CNN-GRU architecture: ResNet-18 extracts per-frame spatial features from the 21-keypoint hand landmark set; a 2-layer GRU (Gated Recurrent Unit) models temporal dependencies across a 20-frame window. GRU was chosen over LSTM for lower parameter count at the same sequence length, important for the smaller ArSL dataset size.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Dataset &amp; training</h2>
+  <p>The ArSL model was trained on a proprietary dataset of 3,000+ video clips spanning 20 common Egyptian ArSL signs, recorded across 8 signers in varied home and studio lighting conditions. Data augmentation included horizontal flip (mirroring), time-warping ±20%, and Gaussian noise on landmark coordinates.</p>
+  <p>Training ran for 40 epochs on a single A100 GPU. The model was exported to ONNX and converted to a browser-runnable format via ONNX.js. Future work includes expanding to 100+ classes and incorporating NMM feature channels.</p>
+</div>
+
+<div class="pg-section">
+  <h2>RTL support &amp; Arabic UI</h2>
+  <p>The Arabic dashboard (<code>/dashboard?lang=ar</code>) sets <code>dir="rtl"</code> and <code>lang="ar"</code> at the HTML root, and uses CSS logical properties throughout. All layout — sidebar position, text alignment, icon mirroring — adapts automatically without JavaScript. Font rendering uses the Thmanyah Sans family, which includes full Arabic glyph coverage.</p>
+</div>
+
+<div class="cta-strip">
+  <h3>Start signing in ArSL</h3>
+  <p>Open the Arabic dashboard — the interface, labels, and model are all Arabic-first.</p>
+  <a href="/dashboard?lang=ar">فتح لوحة التحكم العربية</a>
+  <a href="/languages/asl" class="sec">Explore ASL →</a>
+</div>
+{% endblock %}

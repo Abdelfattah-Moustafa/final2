@@ -1,0 +1,59 @@
+{% extends "_inner_base.html" %}
+{% block title %}Partnership — Together{% endblock %}
+{% block content %}
+<canvas id="sf-canvas" aria-hidden="true"></canvas>
+<div class="pg-hero">
+  <span class="pg-badge">Partnership</span>
+  <h1 class="pg-h1">Build the future<br><em>of accessibility.</em></h1>
+  <p class="pg-lead">Together welcomes partnerships with enterprises, educational institutions, research organizations, and NGOs working on Deaf accessibility and sign language technology.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Partnership types</h2>
+  <div class="uc-grid">
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+      <div class="uc-title">Enterprise</div>
+      <p class="uc-desc">White-label Together for your workplace. Custom vocabulary training on your domain terminology. SSO integration, admin dashboard, usage analytics.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
+      <div class="uc-title">Educational</div>
+      <p class="uc-desc">Free or subsidized deployment for schools, universities, and special education programs. Teacher dashboards, student progress tracking, curriculum integration.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg></div>
+      <div class="uc-title">Research</div>
+      <p class="uc-desc">Access our internal datasets, annotation tools, and model checkpoints. Co-author publications, share benchmark results, and contribute to open-source tooling.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+      <div class="uc-title">NGO &amp; Advocacy</div>
+      <p class="uc-desc">Free licenses for registered Deaf-led organizations, advocacy groups, and accessibility NGOs. Community deployment support included.</p>
+    </div>
+  </div>
+</div>
+
+<div class="pg-section">
+  <h2>What partners receive</h2>
+  <div class="spec-grid">
+    <div class="spec-card"><div class="spec-val">API</div><div class="spec-key">REST &amp; WebSocket access</div></div>
+    <div class="spec-card"><div class="spec-val">Custom</div><div class="spec-key">Vocabulary fine-tuning</div></div>
+    <div class="spec-card"><div class="spec-val">SLA</div><div class="spec-key">99.9% uptime guarantee</div></div>
+    <div class="spec-card"><div class="spec-val">Dedicated</div><div class="spec-key">Onboarding &amp; support</div></div>
+  </div>
+</div>
+
+<div class="pg-section">
+  <h2>How to apply</h2>
+  <p>Fill in the contact form below or email <strong>partnerships@together.app</strong>. Include a brief description of your organization, the use case, estimated user scale, and which partnership type fits best. We respond within 3 business days.</p>
+  <p>For research partnerships, attach a one-page research summary. For enterprise, mention your industry and any compliance requirements (HIPAA, FERPA, GDPR, etc.).</p>
+</div>
+
+<div class="cta-strip">
+  <h3>Start a conversation</h3>
+  <p>Whether you're a Fortune 500 or a community school, we want to hear from you.</p>
+  <a href="/contact">Contact Us</a>
+  <a href="/demo" class="sec">Book a Demo First</a>
+</div>
+{% endblock %}

@@ -1,0 +1,390 @@
+{
+  "base_url": "http://localhost:8000",
+  "duration_seconds": 108.23,
+  "totals": {
+    "pass": 63,
+    "fail": 0,
+    "skip": 0,
+    "all": 63
+  },
+  "results": [
+    {
+      "area": "infra",
+      "name": "Server reachable",
+      "status": "pass",
+      "detail": "status=200"
+    },
+    {
+      "area": "api",
+      "name": "GET /",
+      "status": "pass",
+      "detail": "len=16421"
+    },
+    {
+      "area": "api",
+      "name": "GET /login",
+      "status": "pass",
+      "detail": "len=22113"
+    },
+    {
+      "area": "api",
+      "name": "GET /signup",
+      "status": "pass",
+      "detail": "len=1717"
+    },
+    {
+      "area": "api",
+      "name": "GET /dashboard",
+      "status": "pass",
+      "detail": "len=111891"
+    },
+    {
+      "area": "api",
+      "name": "Static assets from landing",
+      "status": "pass",
+      "detail": "assets_checked=6"
+    },
+    {
+      "area": "auth",
+      "name": "Login invalid email rejected",
+      "status": "pass",
+      "detail": "status=400"
+    },
+    {
+      "area": "auth",
+      "name": "Login wrong password rejected",
+      "status": "pass",
+      "detail": "status=401"
+    },
+    {
+      "area": "auth",
+      "name": "Login valid credentials",
+      "status": "pass",
+      "detail": "token_len=237"
+    },
+    {
+      "area": "auth",
+      "name": "Signup invalid email rejected",
+      "status": "pass",
+      "detail": "status=400"
+    },
+    {
+      "area": "auth",
+      "name": "Signup short password rejected",
+      "status": "pass",
+      "detail": "status=400"
+    },
+    {
+      "area": "auth",
+      "name": "Signup create + duplicate guard",
+      "status": "pass",
+      "detail": "created=autotest.1776613164.v7oj2k@gmail.com duplicate_status=400"
+    },
+    {
+      "area": "api",
+      "name": "Health default",
+      "status": "pass",
+      "detail": "payload={'status': 'ok', 'models_ready': True, 'db_status': 'ok', 'engine_status': 'ok', 'signs_loaded': 274, 'model_signs_loaded': 274, 'error': None}"
+    },
+    {
+      "area": "api",
+      "name": "Health warm-up",
+      "status": "pass",
+      "detail": "payload={'status': 'ok', 'models_ready': True, 'db_status': 'ok', 'engine_status': 'ok', 'signs_loaded': 274, 'model_signs_loaded': 274, 'error': None}"
+    },
+    {
+      "area": "authz",
+      "name": "Translate blocked without token",
+      "status": "pass",
+      "detail": "status=401"
+    },
+    {
+      "area": "authz",
+      "name": "Signs batch blocked without token",
+      "status": "pass",
+      "detail": "status=401"
+    },
+    {
+      "area": "auth",
+      "name": "Profile with token",
+      "status": "pass",
+      "detail": "email=autotest.1776612864.wea1vl@gmail.com"
+    },
+    {
+      "area": "module1",
+      "name": "Sign-to-Text API",
+      "status": "pass",
+      "detail": "payload_keys=['text', 'confidence']"
+    },
+    {
+      "area": "module2",
+      "name": "Sign-to-Speech sentence API",
+      "status": "pass",
+      "detail": "source=llm sentence=Hello world."
+    },
+    {
+      "area": "module3",
+      "name": "Text-to-Sign API",
+      "status": "pass",
+      "detail": "found=1 missing=1"
+    },
+    {
+      "area": "module4",
+      "name": "Speech-to-Sign API",
+      "status": "pass",
+      "detail": "found=1 missing=0"
+    },
+    {
+      "area": "module3",
+      "name": "Signs lookup API",
+      "status": "pass",
+      "detail": "found=1 missing=1"
+    },
+    {
+      "area": "module3",
+      "name": "Single sign route",
+      "status": "pass",
+      "detail": "status=200"
+    },
+    {
+      "area": "socket",
+      "name": "Connect",
+      "status": "pass",
+      "detail": "connected"
+    },
+    {
+      "area": "socket",
+      "name": "Join/Relay/Leave",
+      "status": "pass",
+      "detail": "room=audit-room-1776613183"
+    },
+    {
+      "area": "socket",
+      "name": "Disconnect",
+      "status": "pass",
+      "detail": "events=['connect', 'disconnect']"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Landing load",
+      "status": "pass",
+      "detail": "landing rendered"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Landing CTA Get Started",
+      "status": "pass",
+      "detail": "navigated /signup"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Landing CTA Sign In",
+      "status": "pass",
+      "detail": "navigated /login"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Login invalid email validation",
+      "status": "pass",
+      "detail": "invalid email blocked"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Login tab switch to signup",
+      "status": "pass",
+      "detail": "signup tab visible"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Signup mismatch validation",
+      "status": "pass",
+      "detail": "mismatch blocked"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Login success",
+      "status": "pass",
+      "detail": "dashboard opened"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Dashboard header",
+      "status": "pass",
+      "detail": "Sign to Text"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Module switch vision",
+      "status": "pass",
+      "detail": "Sign to Text"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Module switch speech",
+      "status": "pass",
+      "detail": "Sign to Speech"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Module switch text2sign",
+      "status": "pass",
+      "detail": "Text to Sign"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Module switch speech2sign",
+      "status": "pass",
+      "detail": "Speech to Sign"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Module switch meeting",
+      "status": "pass",
+      "detail": "Live Meeting"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Text-to-sign send",
+      "status": "pass",
+      "detail": "history updated"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Sign-to-speech voice toggle",
+      "status": "pass",
+      "detail": "voice control removed (always on)"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Speech-to-sign mic toggle",
+      "status": "pass",
+      "detail": "status=listening..."
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Meeting create/join/leave",
+      "status": "pass",
+      "detail": "room=room-202604191540-7ugmw"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Sign out",
+      "status": "pass",
+      "detail": "signed out"
+    },
+    {
+      "area": "ui-desktop",
+      "name": "Live meeting speaker/deaf relay",
+      "status": "pass",
+      "detail": "room=room-202604191540-bdkfl speaker=autotest.1776613213.urattk@gmail.com deaf=autotest.1776613216.p6xmg7@gmail.com"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Landing load",
+      "status": "pass",
+      "detail": "landing rendered"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Landing CTA Get Started",
+      "status": "pass",
+      "detail": "navigated /signup"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Landing CTA Sign In",
+      "status": "pass",
+      "detail": "navigated /login"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Login invalid email validation",
+      "status": "pass",
+      "detail": "invalid email blocked"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Login tab switch to signup",
+      "status": "pass",
+      "detail": "signup tab visible"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Signup mismatch validation",
+      "status": "pass",
+      "detail": "mismatch blocked"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Login success",
+      "status": "pass",
+      "detail": "dashboard opened"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Dashboard header",
+      "status": "pass",
+      "detail": "Sign to Text"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Module switch vision",
+      "status": "pass",
+      "detail": "Sign to Text"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Module switch speech",
+      "status": "pass",
+      "detail": "Sign to Speech"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Module switch text2sign",
+      "status": "pass",
+      "detail": "Text to Sign"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Module switch speech2sign",
+      "status": "pass",
+      "detail": "Speech to Sign"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Module switch meeting",
+      "status": "pass",
+      "detail": "Live Meeting"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Text-to-sign send",
+      "status": "pass",
+      "detail": "history updated"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Sign-to-speech voice toggle",
+      "status": "pass",
+      "detail": "voice control removed (always on)"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Speech-to-sign mic toggle",
+      "status": "pass",
+      "detail": "status=listening..."
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Meeting create/join/leave",
+      "status": "pass",
+      "detail": "room=room-202604191540-1vod6"
+    },
+    {
+      "area": "ui-mobile",
+      "name": "Sign out",
+      "status": "pass",
+      "detail": "signed out"
+    }
+  ]
+}

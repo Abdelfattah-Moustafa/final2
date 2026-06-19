@@ -1,0 +1,41 @@
+{
+  "base_url": "http://localhost:8000",
+  "passed": [
+    {
+      "name": "Auth/Login",
+      "passed": true,
+      "detail": "token_len=216"
+    },
+    {
+      "name": "Health/Default",
+      "passed": true,
+      "detail": "{\"status\": \"ok\", \"models_ready\": false, \"db_status\": \"not_loaded\", \"engine_status\": \"not_loaded\"}"
+    },
+    {
+      "name": "Module1/SignToText",
+      "passed": true,
+      "detail": "{\"text\": \"\", \"status\": null, \"confidence\": 0.0}"
+    },
+    {
+      "name": "Module2/SignToSpeechSentence",
+      "passed": true,
+      "detail": "{\"source\": \"llm\", \"sentence\": \"Hello world.\"}"
+    },
+    {
+      "name": "Module3/TextToSign",
+      "passed": true,
+      "detail": "{\"found_count\": 1, \"missing\": [\"world\"]}"
+    },
+    {
+      "name": "Module4/SpeechToSign",
+      "passed": true,
+      "detail": "{\"found_count\": 1, \"missing_count\": 0}"
+    },
+    {
+      "name": "Module5/MeetingAuthGuard",
+      "passed": true,
+      "detail": "unauth_status=401"
+    }
+  ],
+  "failed": []
+}

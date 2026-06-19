@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="description" content="Together — AI-powered sign language translation platform for the deaf and hard-of-hearing community.">
+  <title>{% block title %}Together{% endblock %} | Sign Language AI</title>
+  <link rel="icon" type="image/svg+xml" href="/static/img/tab-icon.svg">
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/static/css/main.css?v=20260419-1">
+  <script src="/static/js/auth.js?v=20260419-1"></script>
+  
+  <style>
+    /* Custom Cursor Companion */
+    @media (pointer: fine) {
+      html, body, *, *:hover {
+        cursor: none !important;
+      }
+      .custom-cursor-container {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        pointer-events: none;
+        display: block;
+      }
+      .cursor-ring {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 14px;
+        height: 14px;
+        border: 1px solid var(--text, #030213);
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        mix-blend-mode: difference;
+        pointer-events: none;
+        transition: width 0.3s cubic-bezier(0.25, 1, 0.5, 1), height 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+        z-index: 100;
+      }
+      .cursor-ring.hovering {
+        width: 52px;
+        height: 52px;
+        border-color: var(--accent, #1f8a82);
+      }
+      .cursor-ring.down {
+        transform: translate(-50%, -50%) scale(0.85);
+      }
+      .cursor-companion {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 40px;
+        height: 40px;
+        border: 1px solid var(--border-strong, rgba(3,2,19,0.15));
+        background: var(--surface-2, rgba(255,255,255,0.7));
+        box-shadow: var(--shadow, 0 10px 30px rgba(0,0,0,0.06));
+        border-radius: 50%;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 90;
+        color: var(--text, #030213);
+        transition: opacity 0.3s, transform 0.2s;
+      }
+      .cursor-companion svg {
+        width: 16px;
+        height: 16px;
+      }
+      .cursor-companion.hovering {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0);
+      }
+      .cursor-companion.down {
+        transform: translate(-50%, -50%) rotate(-12deg) scale(0.8);
+      }
+      .cursor-label {
+        position: absolute;
+        left: 0;
+        top: 0;
+        pointer-events: none;
+        z-index: 95;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.22em;
+        background: var(--text, #030213);
+        color: var(--bg, #f8f8f6);
+        padding: 4px 10px;
+        border-radius: 9999px;
+        opacity: 0;
+        transform: translate(12px, 12px) scale(0.6);
+        transform-origin: top left;
+        transition: opacity 0.25s cubic-bezier(0.25, 1, 0.5, 1), transform 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+        white-space: nowrap;
+      }
+      .cursor-label.visible {
+        opacity: 1;
+        transform: translate(12px, 12px) scale(1);
+      }
+    }
+    @media (pointer: coarse) {
+      .custom-cursor-container {
+        display: none;
+      }
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% block nav %}
+  <nav class="nav" id="main-nav">
+    <a href="/" class="nav-brand" aria-label="Together">
+      <img src="/static/img/logo.svg" alt="Together" class="nav-logo">
+    </a>
+    <div class="nav-links">
+      <a href="/" class="nav-link hide-mobile">Home</a>
+      <a href="/dashboard" class="nav-link hide-mobile">Dashboard</a>
+      <a href="/login" class="btn btn-secondary btn-sm" id="nav-signin" style="display:none;">Sign In</a>
+      <a href="/signup" class="btn btn-primary btn-sm" id="nav-signup" style="display:none;">Get Started</a>
+      <div id="nav-user" style="display:none; align-items:center; gap:12px;">
+        <span id="nav-user-name" class="text-sm font-medium text-muted hide-mobile"></span>
+        <div id="nav-avatar" style="
+          width:34px; height:34px; border-radius:50%;
+          background:rgba(255,255,255,0.9); color:var(--black);
+          border:1px solid rgba(255,255,255,0.22);
+          display:flex; align-items:center; justify-content:center;
+          font-size:12px; font-weight:700; cursor:pointer;
+        " onclick="signOut()"></div>
+      </div>
+    </div>
+  </nav>
+  {% endblock %}
+
+  <main id="main-content" style="{% block main_style %}padding-top: 64px;{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+  
+  {% block footer %}{% endblock %}
+
+  <script>
+    // Populate nav based on auth state
+    (function() {
+      const signedIn = isAuthenticated();
+      const signinBtn = document.getElementById('nav-signin');
+      const signupBtn = document.getElementById('nav-signup');
+      const userArea  = document.getElementById('nav-user');
+      const userName  = document.getElementById('nav-user-name');
+      const avatar    = document.getElementById('nav-avatar');
+
+      if (signinBtn) signinBtn.style.display = signedIn ? 'none' : 'inline-flex';
+      if (signupBtn) signupBtn.style.display = signedIn ? 'none' : 'inline-flex';
+      if (userArea)  userArea.style.display  = signedIn ? 'flex'  : 'none';
+      if (signedIn) {
+        if (userName) userName.textContent = getDisplayName();
+        if (avatar)   avatar.textContent   = getInitials();
+      }
+    })();
+  </script>
+  
+  <script>
+    // ── Custom Cursor Companion ──
+    (function() {
+      if (window.matchMedia("(pointer: coarse)").matches) return;
+      
+      const container = document.createElement('div');
+      container.className = 'custom-cursor-container';
+      
+      const ring = document.createElement('div');
+      ring.className = 'cursor-ring';
+      
+      const companion = document.createElement('div');
+      companion.className = 'cursor-companion';
+      companion.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11V5.6a1.1 1.1 0 1 1 2.2 0V10m0 0V4.4a1.1 1.1 0 1 1 2.2 0V10m0 0V5.2a1.1 1.1 0 1 1 2.2 0V11m0-1.2a1.1 1.1 0 1 1 2.2 0v4.4c0 3-2.2 5.4-5.5 5.4-2 0-3.4-.7-4.6-2.2l-2.3-3a1.15 1.15 0 0 1 1.7-1.5L8 14"/></svg>`;
+      
+      const labelEl = document.createElement('div');
+      labelEl.className = 'cursor-label';
+      
+      container.appendChild(ring);
+      container.appendChild(companion);
+      container.appendChild(labelEl);
+      document.body.appendChild(container);
+      
+      let mouseX = -100, mouseY = -100;
+      let compX = -100, compY = -100;
+      
+      document.addEventListener('pointermove', function(e) {
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+        
+        ring.style.left = mouseX + 'px';
+        ring.style.top = mouseY + 'px';
+        
+        const target = e.target.closest('a, button, select, input, [role="button"], [data-cursor]');
+        if (target) {
+          ring.classList.add('hovering');
+          companion.classList.add('hovering');
+          
+          const text = target.getAttribute('data-cursor') || (target.tagName === 'A' ? 'View' : 'Click');
+          labelEl.textContent = text;
+          labelEl.classList.add('visible');
+        } else {
+          ring.classList.remove('hovering');
+          companion.classList.remove('hovering');
+          labelEl.classList.remove('visible');
+        }
+      });
+      
+      document.addEventListener('pointerdown', function() {
+        ring.classList.add('down');
+        companion.classList.add('down');
+      });
+      
+      document.addEventListener('pointerup', function() {
+        ring.classList.remove('down');
+        companion.classList.remove('down');
+      });
+      
+      function updateCompanion() {
+        const stiffness = 0.12;
+        compX += (mouseX - compX) * stiffness;
+        compY += (mouseY - compY) * stiffness;
+        
+        companion.style.left = compX + 'px';
+        companion.style.top = compY + 'px';
+        
+        labelEl.style.left = compX + 'px';
+        labelEl.style.top = compY + 'px';
+        
+        requestAnimationFrame(updateCompanion);
+      }
+      updateCompanion();
+    })();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

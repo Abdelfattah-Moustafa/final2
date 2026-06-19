@@ -1,0 +1,22 @@
+{
+    "baby": 0,
+    "eat": 1,
+    "father": 2,
+    "finish": 3,
+    "good": 4,
+    "happy": 5,
+    "hear": 6,
+    "house": 7,
+    "important": 8,
+    "love": 9,
+    "mall": 10,
+    "me": 11,
+    "mosque": 12,
+    "mother": 13,
+    "normal": 14,
+    "sad": 15,
+    "stop": 16,
+    "thanks": 17,
+    "thinking": 18,
+    "worry": 19
+}

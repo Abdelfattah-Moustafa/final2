@@ -1,0 +1,46 @@
+{% extends "_inner_base.html" %}
+{% block title %}ASL — American Sign Language{% endblock %}
+{% block content %}
+<canvas id="sf-canvas" aria-hidden="true"></canvas>
+<div class="pg-hero">
+  <span class="pg-badge">Language</span>
+  <h1 class="pg-h1">American<br><em>Sign Language.</em></h1>
+  <p class="pg-lead">ASL is the primary sign language of Deaf communities in the United States and most of Anglophone Canada. Together supports 250 ASL signs with a TFLite model running at under 50ms per inference.</p>
+</div>
+
+<div class="pg-section">
+  <h2>About ASL</h2>
+  <p>American Sign Language emerged in the early 19th century, shaped by French Sign Language (LSF) brought to the American School for the Deaf in 1817 by Laurent Clerc, and indigenous home-sign systems already in use across New England. It is not derived from English — it has its own grammar, syntax, and rich morphology including spatial inflection, non-manual markers, and classifier predicates.</p>
+  <p>ASL is used by an estimated 500,000–2 million people in the US and Canada. It is recognized as a full, independent language by linguists and is officially supported in many educational and governmental contexts under the Americans with Disabilities Act (ADA).</p>
+</div>
+
+<div class="pg-section">
+  <h2>Together's ASL model</h2>
+  <div class="spec-grid">
+    <div class="spec-card"><div class="spec-val">250</div><div class="spec-key">Vocabulary classes</div></div>
+    <div class="spec-card"><div class="spec-val">TFLite</div><div class="spec-key">Model format (int8)</div></div>
+    <div class="spec-card"><div class="spec-val">4.2MB</div><div class="spec-key">Quantized model size</div></div>
+    <div class="spec-card"><div class="spec-val">92%</div><div class="spec-key">Top-1 accuracy (test set)</div></div>
+  </div>
+  <p style="margin-top:24px">The model is a CNN-LSTM hybrid: MobileNetV3-Small extracts spatial features from 21-keypoint hand landmarks per frame; a 2-layer LSTM captures temporal dynamics across a 15-frame rolling window. Training used multi-signer data with augmented signing speed, background, and lighting.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Dataset &amp; training</h2>
+  <p>Together's ASL recognizer was trained on a curated blend of public datasets including the WLASL (Word-Level American Sign Language) dataset of 2000+ sign classes from which the 250 most common were selected, supplemented with internal recordings across 12 signers of diverse backgrounds.</p>
+  <p>Training used PyTorch with a custom landmark-based data pipeline, then converted to TFLite via TF Lite Converter with post-training int8 quantization. WASM deployment uses the TFLite Micro runtime embedded in the Together static bundle.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Grammar notes</h2>
+  <p>ASL grammar differs significantly from English. Key features: <strong>Topic-Comment structure</strong> (topic established first, then commented upon); <strong>Non-Manual Markers</strong> (NMMs) — facial expressions and head movements that carry grammatical meaning (questions, negation, conditionals); <strong>Spatial grammar</strong> — referents are assigned locations in the signing space and verbs inflect to agree with subject/object locations; <strong>Classifiers</strong> — handshapes that represent categories of objects and their movement/placement.</p>
+  <p>Together's current model focuses on isolated sign vocabulary recognition. Continuous signed sentence parsing with NMM analysis is on the roadmap for a future release.</p>
+</div>
+
+<div class="cta-strip">
+  <h3>Start signing in ASL</h3>
+  <p>Open the English dashboard and allow camera access. No account needed to try.</p>
+  <a href="/dashboard?lang=en">Open English Dashboard</a>
+  <a href="/languages/arsl" class="sec">Explore ArSL →</a>
+</div>
+{% endblock %}

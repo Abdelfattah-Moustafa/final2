@@ -1,0 +1,78 @@
+{% extends "_inner_base.html" %}
+{% block title %}Contact Us — Together{% endblock %}
+{% block content %}
+<canvas id="sf-canvas" aria-hidden="true"></canvas>
+<div class="pg-hero">
+  <span class="pg-badge">Contact</span>
+  <h1 class="pg-h1">Let's talk.<br><em>We're listening.</em></h1>
+  <p class="pg-lead">Whether you have a question, a partnership idea, a bug to report, or just want to say hello — we'd love to hear from you.</p>
+</div>
+
+<div class="pg-section" style="display:grid;grid-template-columns:1.2fr 1fr;gap:48px;align-items:start;max-width:900px">
+  <div>
+    <h2>Send us a message</h2>
+    <form style="display:flex;flex-direction:column;gap:18px;margin-top:24px" onsubmit="handleContact(event)">
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px" for="c-name">Full Name</label>
+        <input id="c-name" type="text" placeholder="Your name" required style="width:100%;padding:11px 14px;border-radius:var(--radius);border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 90%,transparent);color:var(--text);font-family:var(--font-sans);font-size:14px;backdrop-filter:blur(8px)">
+      </div>
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px" for="c-email">Email Address</label>
+        <input id="c-email" type="email" placeholder="you@example.com" required style="width:100%;padding:11px 14px;border-radius:var(--radius);border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 90%,transparent);color:var(--text);font-family:var(--font-sans);font-size:14px;backdrop-filter:blur(8px)">
+      </div>
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px" for="c-subject">Subject</label>
+        <select id="c-subject" style="width:100%;padding:11px 14px;border-radius:var(--radius);border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 90%,transparent);color:var(--text);font-family:var(--font-sans);font-size:14px">
+          <option>General enquiry</option>
+          <option>Partnership</option>
+          <option>Research collaboration</option>
+          <option>Bug report</option>
+          <option>Press &amp; media</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px" for="c-message">Message</label>
+        <textarea id="c-message" rows="5" placeholder="Tell us how we can help..." required style="width:100%;padding:11px 14px;border-radius:var(--radius);border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 90%,transparent);color:var(--text);font-family:var(--font-sans);font-size:14px;resize:vertical;backdrop-filter:blur(8px)"></textarea>
+      </div>
+      <div id="c-success" style="display:none;padding:12px 16px;border-radius:var(--radius);background:var(--accent-soft);border:1px solid var(--accent);color:var(--accent);font-size:13px;font-weight:600">Message sent! We'll get back to you within 2 business days.</div>
+      <button type="submit" style="padding:12px 24px;border-radius:var(--radius-full);background:var(--accent);color:#fff;font-weight:700;font-size:14px;border:none;cursor:pointer;transition:opacity .18s;font-family:var(--font-sans)">Send Message</button>
+    </form>
+  </div>
+  <div>
+    <h2>Get in touch directly</h2>
+    <div style="margin-top:24px;display:flex;flex-direction:column;gap:20px">
+      <div>
+        <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:6px">Email</div>
+        <div style="font-size:15px;color:var(--text)">hello@together.app</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px">General enquiries &amp; support</div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:6px">Partnerships</div>
+        <div style="font-size:15px;color:var(--text)">partnerships@together.app</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px">Enterprise, educational &amp; research</div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:6px">Press &amp; media</div>
+        <div style="font-size:15px;color:var(--text)">press@together.app</div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:6px">Office</div>
+        <div style="font-size:14px;color:var(--muted);line-height:1.7">Together Technologies<br>123 Innovation Drive, Suite 400<br>San Francisco, CA 94107<br>United States</div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:6px">Response time</div>
+        <div style="font-size:14px;color:var(--muted)">We aim to respond to all enquiries within 2 business days. Partnership discussions within 3 business days.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function handleContact(e){
+  e.preventDefault();
+  document.getElementById('c-success').style.display='block';
+  e.target.querySelector('button[type=submit]').disabled=true;
+}
+</script>
+{% endblock %}

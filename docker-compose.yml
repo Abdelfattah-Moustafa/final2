@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: together
+      POSTGRES_PASSWORD: together
+      POSTGRES_DB: together
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates the pgvector extension on first init (runs as superuser).
+      - ./scripts/db/init_pgvector.sql:/docker-entrypoint-initdb.d/init_pgvector.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U together -d together"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  asl_web:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+psycopg://together:together@postgres:5432/together
+      OLLAMA_HOST: http://ollama:11434
+      # Provide real keys via a .env file (see .env.example). Compose reads .env automatically.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-insecure-change-me}
+    volumes:
+      - .:/app
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    # On first launch: docker exec -it <ollama> ollama run llama3.2
+
+volumes:
+  pgdata:
+  ollama_models:

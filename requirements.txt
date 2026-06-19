@@ -1,0 +1,28 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-socketio==5.12.1
+jinja2==3.1.5
+sqlalchemy==2.0.50
+alembic==1.14.0
+psycopg[binary]==3.2.3
+pgvector==0.3.6
+bcrypt==4.2.1
+python-jose[cryptography]==3.3.0
+pydantic[email]==2.10.4
+email-validator==2.2.0
+mediapipe==0.10.18
+opencv-python==4.10.0.84
+ai-edge-litert>=1.1.0
+sentence-transformers==3.3.1
+requests==2.32.3
+scipy==1.14.1
+python-multipart==0.0.20
+argon2-cffi==23.1.0
+pytest==8.3.4
+httpx==0.28.1
+
+# ── Offline provider fallbacks (optional) ──
+# Installed by default so the offline chain works out of the box. If you only
+# ever use cloud providers you can remove these to slim the image.
+pyttsx3==2.98
+faster-whisper==1.1.0

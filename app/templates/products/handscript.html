@@ -1,0 +1,71 @@
+{% extends "_inner_base.html" %}
+{% block title %}HandScript — Sign to Text{% endblock %}
+{% block content %}
+<canvas id="sf-canvas" aria-hidden="true"></canvas>
+<div class="pg-hero">
+  <span class="pg-badge">Sign → Text</span>
+  <h1 class="pg-h1">Your hands<br><em>become words.</em></h1>
+  <p class="pg-lead">HandScript converts live American Sign Language into text in real time — powered by a 250-class TFLite model running entirely in your browser.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Performance at a glance</h2>
+  <div class="spec-grid">
+    <div class="spec-card"><div class="spec-val">250</div><div class="spec-key">ASL sign classes</div></div>
+    <div class="spec-card"><div class="spec-val">&lt;50ms</div><div class="spec-key">Inference latency</div></div>
+    <div class="spec-card"><div class="spec-val">92%</div><div class="spec-key">Top-1 accuracy</div></div>
+    <div class="spec-card"><div class="spec-val">100%</div><div class="spec-key">On-device — no upload</div></div>
+  </div>
+</div>
+
+<div class="pg-section">
+  <h2>How it works</h2>
+  <p>When you open Together and allow camera access, MediaPipe Holistic maps 21 hand landmarks, 33 body keypoints, and 468 facial landmarks — all locally, in real time. These landmarks feed a TFLite Lite model that classifies the current sign into one of 250 ASL vocabulary items. Predictions stream to the text area as rolling confidence windows settle above the threshold.</p>
+  <p>The model was trained on a large multi-signer dataset with augmented lighting, hand angle, and signing speed variations. It was quantized post-training using int8 dynamic-range quantization for WebAssembly deployment without accuracy loss.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Use cases</h2>
+  <div class="uc-grid">
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+      <div class="uc-title">Workplace meetings</div>
+      <p class="uc-desc">Deaf professionals sign while colleagues read live captions. No interpreter scheduling required for impromptu conversations.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
+      <div class="uc-title">Education</div>
+      <p class="uc-desc">Students practice vocabulary with instant feedback. Teachers verify correctness without pausing class flow.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+      <div class="uc-title">Healthcare</div>
+      <p class="uc-desc">Patients communicate with intake staff. HandScript transcripts attach directly to consultation notes.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+      <div class="uc-title">Content creation</div>
+      <p class="uc-desc">Signers produce auto-captioned social media content without post-production transcription tools.</p>
+    </div>
+  </div>
+</div>
+
+<div class="pg-section">
+  <h2>Technical architecture</h2>
+  <p>HandScript runs a three-stage pipeline: <strong>landmark extraction</strong> via MediaPipe Holistic (WebGL backend), <strong>temporal smoothing</strong> with a 15-frame rolling window, and <strong>TFLite inference</strong> using the WebAssembly runtime. The model is a compact CNN-LSTM hybrid: a MobileNetV3-Small backbone extracts spatial features per frame, and a 2-layer LSTM models temporal dynamics across the window.</p>
+  <p>The entire model weighs 4.2 MB (int8 quantized) and loads in under 800ms on a mid-range laptop. No GPU is required — CPU inference is fast enough for 30fps input streams.</p>
+</div>
+
+<div class="cta-strip">
+  <h3>Try HandScript now</h3>
+  <p>Open the English dashboard and select Sign to Text. No account required for a demo.</p>
+  <a href="/dashboard?lang=en" class="btn-magnetic btn-magnetic-primary" data-cursor="Enter">
+    <span class="btn-magnetic-fill"></span>
+    <span class="btn-magnetic-text">Open Dashboard</span>
+  </a>
+  <a href="/demo" class="btn-magnetic btn-magnetic-outline" data-cursor="Demo">
+    <span class="btn-magnetic-fill"></span>
+    <span class="btn-magnetic-text">Book a Demo</span>
+  </a>
+</div>
+{% endblock %}

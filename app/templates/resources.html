@@ -1,0 +1,97 @@
+{% extends "_inner_base.html" %}
+{% block title %}Resources — Together{% endblock %}
+{% block content %}
+<canvas id="sf-canvas" aria-hidden="true"></canvas>
+<div class="pg-hero">
+  <span class="pg-badge">Resources</span>
+  <h1 class="pg-h1">Research,<br><em>datasets &amp; discoveries.</em></h1>
+  <p class="pg-lead">Everything that powers Together — open datasets, model architectures, case studies, and the research that inspired us.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Datasets used</h2>
+  <div class="uc-grid">
+    <div class="uc-card">
+      <div class="uc-title">WLASL</div>
+      <p class="uc-desc">Word-Level American Sign Language — 2000+ classes, 21K+ videos, 119 signers. Used as the primary ASL pre-training corpus. <em>Li et al., 2020.</em></p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-title">MS-ASL</div>
+      <p class="uc-desc">Microsoft American Sign Language Dataset — 1000 classes, 25K clips. Used for vocabulary expansion and transfer learning. <em>Joze &amp; Koller, 2019.</em></p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-title">ArSL-2018</div>
+      <p class="uc-desc">Public Egyptian Arabic Sign Language dataset — 32 classes, 54,049 images, 40 signers. Foundation for ArSL fingerspelling recognition. <em>Latif et al., 2018.</em></p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-title">Together Internal</div>
+      <p class="uc-desc">3,000+ proprietary clips across 20 ArSL signs, 12 ASL signers. Collected under IRB-equivalent protocol with full consent. Available to research partners.</p>
+    </div>
+  </div>
+</div>
+
+<div class="pg-section">
+  <h2>Model parameters</h2>
+  <div class="spec-grid">
+    <div class="spec-card"><div class="spec-val">4.2MB</div><div class="spec-key">ASL TFLite model (int8)</div></div>
+    <div class="spec-card"><div class="spec-val">CNN-LSTM</div><div class="spec-key">ASL architecture</div></div>
+    <div class="spec-card"><div class="spec-val">2.8MB</div><div class="spec-key">ArSL ONNX model</div></div>
+    <div class="spec-card"><div class="spec-val">CNN-GRU</div><div class="spec-key">ArSL architecture</div></div>
+    <div class="spec-card"><div class="spec-val">15 frames</div><div class="spec-key">ASL temporal window</div></div>
+    <div class="spec-card"><div class="spec-val">20 frames</div><div class="spec-key">ArSL temporal window</div></div>
+  </div>
+</div>
+
+<div class="pg-section">
+  <h2>Key research papers</h2>
+  <div class="uc-grid">
+    <div class="uc-card">
+      <div class="uc-title">MediaPipe Holistic</div>
+      <p class="uc-desc">Lugaresi et al., "MediaPipe: A Framework for Building Perception Pipelines." <em>CVPR Workshop, 2020.</em> The backbone landmark extractor used in Together's real-time pipeline.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-title">Sign Language Recognition via Skeletal Keypoints</div>
+      <p class="uc-desc">Jiang et al., "Skeleton-Aware Multi-Modal Sign Language Recognition." <em>CVPR 2021.</em> Inspired the landmark-first approach rather than raw RGB input.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-title">Efficient On-Device Inference</div>
+      <p class="uc-desc">David et al., "TensorFlow Lite Micro: Embedded Machine Learning on TinyML Systems." <em>MLSys 2021.</em> Basis for the WASM-TFLite deployment strategy.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-title">Arabic SLR Survey</div>
+      <p class="uc-desc">Adaloglou et al., "A Comprehensive Study on Deep Learning-Based Methods for Sign Language Recognition." <em>IEEE TNNLS, 2022.</em> Informed the CNN-GRU choice for ArSL.</p>
+    </div>
+  </div>
+</div>
+
+<div class="pg-section">
+  <h2>Case studies</h2>
+  <div class="uc-grid">
+    <div class="uc-card">
+      <div class="uc-title">Cairo University — Pilot 2025</div>
+      <p class="uc-desc">Deployed in 3 classrooms with Deaf students. ArSL recognition reduced reliance on human interpreters by 40% for structured question-answer sessions.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-title">San Francisco Health Clinic — Pilot 2025</div>
+      <p class="uc-desc">HandScript used at reception for patient intake. 87% of Deaf patients reported feeling more comfortable without waiting for a Video Remote Interpreting session.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-title">Together Open Beta — 2025</div>
+      <p class="uc-desc">1,200 users across 34 countries in the first 60 days. Average session length: 18 minutes. Most-used feature: Sign to Text (61%), followed by Live Meeting (24%).</p>
+    </div>
+  </div>
+</div>
+
+<div class="pg-section">
+  <h2>External research &amp; news</h2>
+  <p>The field of sign language recognition is advancing rapidly. Notable recent developments include large-scale multi-lingual sign language datasets (OpenASL, How2Sign), transformer-based architectures (SignBERT, SPOTER), and the growing push for standardized sign language datasets across Arabic-speaking countries coordinated by the Arab League's accessibility working group.</p>
+  <p>Together contributes to this ecosystem by open-sourcing our internal annotation tooling and publishing benchmark results on standard test splits. We collaborate with the Gallaudet University Technology Access Program and the Arab Federation of the Deaf.</p>
+</div>
+
+<div class="cta-strip">
+  <h3>Partner with us on research</h3>
+  <p>We welcome collaborations on dataset collection, model improvement, and field trials.</p>
+  <a href="/partnership">Partnership Enquiry</a>
+  <a href="/contact" class="sec">Contact Research Team</a>
+</div>
+{% endblock %}

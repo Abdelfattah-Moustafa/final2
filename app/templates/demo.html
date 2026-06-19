@@ -1,0 +1,89 @@
+{% extends "_inner_base.html" %}
+{% block title %}Book a Demo — Together{% endblock %}
+{% block content %}
+<canvas id="sf-canvas" aria-hidden="true"></canvas>
+<div class="pg-hero">
+  <span class="pg-badge">Book a Demo</span>
+  <h1 class="pg-h1">See Together<br><em>in 30 minutes.</em></h1>
+  <p class="pg-lead">We'll walk you through every feature live, answer your technical questions, and tailor the demo to your use case — enterprise, education, healthcare, or research.</p>
+</div>
+
+<div class="pg-section" style="display:grid;grid-template-columns:1.2fr 1fr;gap:48px;align-items:start;max-width:900px">
+  <div>
+    <h2>Request a demo</h2>
+    <form style="display:flex;flex-direction:column;gap:16px;margin-top:24px" onsubmit="handleDemo(event)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div>
+          <label style="display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px">First Name</label>
+          <input type="text" placeholder="First" required style="width:100%;padding:11px 14px;border-radius:var(--radius);border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 90%,transparent);color:var(--text);font-size:14px;font-family:var(--font-sans);backdrop-filter:blur(8px)">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px">Last Name</label>
+          <input type="text" placeholder="Last" required style="width:100%;padding:11px 14px;border-radius:var(--radius);border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 90%,transparent);color:var(--text);font-size:14px;font-family:var(--font-sans);backdrop-filter:blur(8px)">
+        </div>
+      </div>
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px">Work Email</label>
+        <input type="email" placeholder="you@organization.com" required style="width:100%;padding:11px 14px;border-radius:var(--radius);border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 90%,transparent);color:var(--text);font-size:14px;font-family:var(--font-sans);backdrop-filter:blur(8px)">
+      </div>
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px">Organization</label>
+        <input type="text" placeholder="Your organization" required style="width:100%;padding:11px 14px;border-radius:var(--radius);border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 90%,transparent);color:var(--text);font-size:14px;font-family:var(--font-sans);backdrop-filter:blur(8px)">
+      </div>
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px">Use case</label>
+        <select style="width:100%;padding:11px 14px;border-radius:var(--radius);border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 90%,transparent);color:var(--text);font-size:14px;font-family:var(--font-sans)">
+          <option>Enterprise / Workplace accessibility</option>
+          <option>Educational institution</option>
+          <option>Healthcare / clinical</option>
+          <option>Research collaboration</option>
+          <option>NGO / Advocacy</option>
+          <option>Government / public services</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px">Preferred date</label>
+        <input type="date" style="width:100%;padding:11px 14px;border-radius:var(--radius);border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 90%,transparent);color:var(--text);font-size:14px;font-family:var(--font-sans);backdrop-filter:blur(8px)">
+      </div>
+      <div>
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px">Anything specific you'd like to see?</label>
+        <textarea rows="3" placeholder="e.g. ArSL recognition, live meeting captions, API integration..." style="width:100%;padding:11px 14px;border-radius:var(--radius);border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 90%,transparent);color:var(--text);font-size:14px;font-family:var(--font-sans);resize:vertical;backdrop-filter:blur(8px)"></textarea>
+      </div>
+      <div id="demo-success" style="display:none;padding:12px 16px;border-radius:var(--radius);background:var(--accent-soft);border:1px solid var(--accent);color:var(--accent);font-size:13px;font-weight:600">Request received! We'll send a calendar invite within 1 business day.</div>
+      <button type="submit" style="padding:13px 24px;border-radius:var(--radius-full);background:var(--accent);color:#fff;font-weight:700;font-size:15px;border:none;cursor:pointer;font-family:var(--font-sans)">Book My Demo</button>
+    </form>
+  </div>
+
+  <div>
+    <h2>What to expect</h2>
+    <div style="margin-top:24px;display:flex;flex-direction:column;gap:20px">
+      <div style="display:flex;gap:14px;align-items:flex-start">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-family:var(--font-display);font-weight:800;font-size:13px;flex-shrink:0">1</div>
+        <div><div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px">30-minute live session</div><p style="font-size:13px;color:var(--muted);line-height:1.6;margin:0">A Together team member shares their screen and walks through ASL + ArSL recognition, live meeting captions, and the full product suite.</p></div>
+      </div>
+      <div style="display:flex;gap:14px;align-items:flex-start">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-family:var(--font-display);font-weight:800;font-size:13px;flex-shrink:0">2</div>
+        <div><div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px">Your questions answered</div><p style="font-size:13px;color:var(--muted);line-height:1.6;margin:0">Technical architecture, privacy posture, compliance (GDPR, HIPAA), integration options — ask anything.</p></div>
+      </div>
+      <div style="display:flex;gap:14px;align-items:flex-start">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-family:var(--font-display);font-weight:800;font-size:13px;flex-shrink:0">3</div>
+        <div><div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px">Custom pilot proposal</div><p style="font-size:13px;color:var(--muted);line-height:1.6;margin:0">If there's a fit, we'll follow up with a tailored pilot plan — timeline, scope, pricing, and support structure.</p></div>
+      </div>
+    </div>
+
+    <div style="margin-top:32px;padding:20px 22px;border-radius:var(--radius-lg);border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:blur(12px)">
+      <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:10px">Demo FAQ</div>
+      <p style="font-size:13px;color:var(--muted);line-height:1.7;margin:0"><strong style="color:var(--text)">Is the demo free?</strong> Yes, always.<br><strong style="color:var(--text)">Do I need to install anything?</strong> No. We run the demo in a browser tab.<br><strong style="color:var(--text)">Who should attend?</strong> The decision-maker plus any technical stakeholder.<br><strong style="color:var(--text)">Is Arabic (ArSL) shown?</strong> Yes — we demo both English and Arabic dashboards.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+function handleDemo(e){
+  e.preventDefault();
+  document.getElementById('demo-success').style.display='block';
+  e.target.querySelector('button[type=submit]').disabled=true;
+}
+</script>
+{% endblock %}

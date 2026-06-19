@@ -1,0 +1,110 @@
+/* ============================================================
+   TOGETHER — Design System · Tokens & Theme
+   ------------------------------------------------------------
+   Single source of truth for color, type, spacing, elevation.
+   Light + dark are token swaps via html[data-theme]; every
+   component in ui.css reads ONLY these variables, so a future
+   restyle is a one-file change.
+   Default theme is dark (brand-consistent). theme.js promotes
+   the user's stored choice / system preference before paint.
+   ============================================================ */
+
+/* ── Brand fonts (bundled — no external CDN dependency) ── */
+@font-face{font-family:'Thmanyah Sans';src:url('/static/fonts/thmanyahsans-Light.woff2') format('woff2');font-weight:300;font-display:swap}
+@font-face{font-family:'Thmanyah Sans';src:url('/static/fonts/thmanyahsans-Regular.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'Thmanyah Sans';src:url('/static/fonts/thmanyahsans-Medium.woff2') format('woff2');font-weight:500;font-display:swap}
+@font-face{font-family:'Thmanyah Sans';src:url('/static/fonts/thmanyahsans-Bold.woff2') format('woff2');font-weight:700;font-display:swap}
+@font-face{font-family:'Thmanyah Sans';src:url('/static/fonts/thmanyahsans-Black.woff2') format('woff2');font-weight:800;font-display:swap}
+@font-face{font-family:'Thmanyah Serif';src:url('/static/fonts/thmanyahserifdisplay-Regular.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'Thmanyah Serif';src:url('/static/fonts/thmanyahserifdisplay-Bold.woff2') format('woff2');font-weight:700;font-display:swap}
+@font-face{font-family:'Thmanyah Serif';src:url('/static/fonts/thmanyahserifdisplay-Black.woff2') format('woff2');font-weight:800;font-display:swap}
+
+/* ── Tokens that DON'T change between themes ── */
+:root{
+  --font-sans:'DM Sans','Thmanyah Sans','Inter',-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-display:'Bricolage Grotesque','Thmanyah Serif',Georgia,serif;
+
+  --radius-sm:9px; --radius:13px; --radius-lg:18px; --radius-xl:22px; --radius-full:999px;
+
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
+  --space-5:22px; --space-6:30px; --space-8:44px;
+
+  --accent:#1f8a82;          /* indigo — single source; swap here to rebrand */
+  --accent-strong:#16706a;
+  --accent-text:#ffffff;
+  --danger:#ef4444; --danger-soft:rgba(239,68,68,.12);
+  --transition:.18s cubic-bezier(.16,1,.3,1);
+
+  /* live "recording" red, theme-independent */
+  --rec:#ef4444;
+  --brand-teal:#1f8a82; --brand-sand:#e2b483;
+}
+
+/* ── DARK (default) ── */
+:root,
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0a0a0c;
+  --sidebar:#0c0c0e;
+  --surface:#131316;
+  --surface-2:#1a1a1f;
+  --border:#25252d;
+  --border-strong:#34343d;
+  --text:#f4f4f7;
+  --muted:#a8a8b3;
+  --faint:#6d6d78;
+  --accent:#1f8a82;
+  --accent-soft:rgba(31,138,130,.15);
+  --live:#34d399;
+  --live-glow:rgba(52,211,153,.25);
+  --ok:#34d399; --ok-soft:rgba(52,211,153,.15);
+  --shadow:0 1px 0 rgba(255,255,255,.03), 0 12px 32px rgba(0,0,0,.45);
+  --shadow-lg:0 30px 80px rgba(0,0,0,.55);
+  --scrim:rgba(4,4,8,.65);
+  --viewport:linear-gradient(140deg,#191920,#0e0e14);
+  --badge-bg:rgba(8,8,12,.65);
+  --skel:#1f8a82;
+  --accent-sand:#e2b483; --accent-sand-soft:rgba(226,180,131,.15);
+}
+
+/* ── LIGHT ── */
+html[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f6f7f9;
+  --sidebar:#ffffff;
+  --surface:#ffffff;
+  --surface-2:#f1f3f7;
+  --border:#e4e7ee;
+  --border-strong:#d3d8e2;
+  --text:#0e1018;
+  --muted:#545868;
+  --faint:#969dab;
+  --accent:#1f8a82;
+  --accent-soft:rgba(31,138,130,.12);
+  --live:#059669;
+  --live-glow:rgba(5,150,105,.2);
+  --ok:#059669; --ok-soft:rgba(5,150,105,.12);
+  --shadow:0 1px 3px rgba(14,16,24,.04), 0 10px 30px rgba(14,16,24,.06);
+  --shadow-lg:0 30px 80px rgba(14,16,24,.14);
+  --scrim:rgba(14,16,24,.38);
+  --viewport:linear-gradient(140deg,#eef0f6,#e4e8f0);
+  --badge-bg:rgba(14,16,24,.58);
+  --skel:#1f8a82;
+}
+
+/* honor system preference only when the user hasn't chosen
+   (theme.js sets data-theme; this is the no-JS fallback) */
+@media (prefers-color-scheme:light){
+  html:not([data-theme]){
+    color-scheme:light;
+    --bg:#f6f7f9; --sidebar:#fff; --surface:#fff; --surface-2:#f1f3f7;
+    --border:#e4e7ee; --border-strong:#d3d8e2; --text:#0e1018; --muted:#545868;
+    --faint:#969dab; --accent:#1f8a82; --accent-soft:rgba(31,138,130,.12);
+    --live:#059669; --live-glow:rgba(5,150,105,.2); --ok:#059669; --ok-soft:rgba(5,150,105,.12);
+    --shadow:0 1px 3px rgba(14,16,24,.04),0 10px 30px rgba(14,16,24,.06);
+    --shadow-lg:0 30px 80px rgba(14,16,24,.14); --scrim:rgba(14,16,24,.38);
+    --viewport:linear-gradient(140deg,#eef0f6,#e4e8f0); --badge-bg:rgba(14,16,24,.58); --skel:#1f8a82;
+  }
+}
+
+/* RTL is driven by [dir="rtl"]; logical properties in ui.css do the mirroring. */

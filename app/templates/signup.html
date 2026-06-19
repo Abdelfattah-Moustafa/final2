@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Create Account{% endblock %}
+{% block main_style %}padding-top: 0;{% endblock %}
+{% block nav %}{% endblock %}
+
+{% block content %}
+{# Signup page: redirect to login page with signup tab active #}
+<script>
+  window.location.replace('/login?tab=signup');
+</script>
+{% endblock %}

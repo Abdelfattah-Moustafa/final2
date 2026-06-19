@@ -1,0 +1,683 @@
+{% extends "base.html" %}
+{% block title %}Sign In{% endblock %}
+{% block main_style %}padding-top: 0;{% endblock %}
+{% block nav %}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/theme.css?v=phase6-1">
+<link rel="stylesheet" href="/static/css/ui.css?v=phase6-1">
+<script src="/static/js/theme.js?v=phase6-1"></script>
+<style>
+  body {
+    background: #f8f8f6 !important;
+    color: #030213 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    transition: background var(--transition), color var(--transition);
+  }
+  #main-content {
+    max-width: 100% !important;
+    padding-top: 0 !important;
+    background: transparent !important;
+  }
+  
+  .t-scope.ap {
+    background: transparent;
+    font-family: 'DM Sans', sans-serif !important;
+  }
+
+  /* ── Auth page two-column shell ── */
+  .ap {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  @media(max-width: 768px) {
+    .ap {
+      grid-template-columns: 1fr;
+    }
+    .ap-brand {
+      display: none;
+    }
+  }
+
+  /* ── Brand panel (left) ── */
+  .ap-brand {
+    background: #050505;
+    color: #fff;
+    padding: 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+    overflow: hidden;
+    border-inline-end: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .ap-brand-grid {
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    background-size: 52px 52px;
+    pointer-events: none;
+  }
+  .ap-brand-circle {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    pointer-events: none;
+  }
+  .ap-logo-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    font-family: 'Bricolage Grotesque', sans-serif !important;
+    font-weight: 800;
+    font-size: 22px;
+    color: #fff;
+    text-decoration: none;
+    position: relative;
+  }
+  .ap-logo {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    font-size: 16px;
+    font-family: 'Bricolage Grotesque', sans-serif !important;
+  }
+  .ap-brand-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 52px 0;
+    position: relative;
+  }
+  .ap-brand-h {
+    font-family: 'Bricolage Grotesque', sans-serif !important;
+    font-size: clamp(44px, 4.5vw, 68px);
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 0.96;
+    margin-bottom: 24px;
+    color: #fff;
+  }
+  .ap-brand-p {
+    font-size: 15px;
+    line-height: 1.7;
+    opacity: 0.84;
+    max-width: 340px;
+  }
+  .ap-pillars {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    margin-top: 44px;
+  }
+  .ap-pillar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 13px;
+    opacity: 0.82;
+    font-weight: 500;
+  }
+  .ap-pillar-n {
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    display: grid;
+    place-items: center;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+  }
+  .ap-brand-foot {
+    font-size: 11px;
+    opacity: 0.52;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    position: relative;
+  }
+
+  /* ── Form panel (right) ── */
+  .ap-form {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 32px;
+    background: radial-gradient(circle at 15% 10%, rgba(255,255,255,1), transparent 28%),
+                radial-gradient(circle at 80% 20%, rgba(230,234,238,0.75), transparent 30%),
+                linear-gradient(180deg, #f8f8f6, #ececea) !important;
+  }
+  .ap-inner {
+    width: 100%;
+    max-width: 420px;
+  }
+  .ap-back {
+    display: none;
+    position: fixed;
+    top: 18px;
+    inset-inline-start: 18px;
+    z-index: 50;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    border-radius: var(--radius-full);
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    font-size: 12px;
+    font-weight: 700;
+    color: #030213;
+    text-decoration: none;
+    backdrop-filter: blur(10px);
+    transition: all 0.2s ease;
+  }
+  .ap-back:hover {
+    background: rgba(255, 255, 255, 0.9);
+    transform: translateX(-2px);
+  }
+  @media(max-width: 768px) {
+    .ap-back {
+      display: flex;
+    }
+  }
+
+  /* Tabs */
+  .ap-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 36px;
+    border-bottom: 1px solid rgba(3, 2, 19, 0.08);
+  }
+  .ap-tab {
+    padding: 12px 0;
+    margin-inline-end: 28px;
+    font-size: 14px;
+    font-weight: 700;
+    color: rgba(3, 2, 19, 0.4);
+    border: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    background: 0;
+    cursor: pointer;
+    font-family: 'Bricolage Grotesque', sans-serif !important;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .ap-tab.is-active {
+    color: #030213;
+    border-bottom-color: #030213;
+  }
+  .ap-tab:hover:not(.is-active) {
+    color: #030213;
+  }
+
+  /* Headings & text */
+  .ap-h {
+    font-family: 'Bricolage Grotesque', sans-serif !important;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 6px;
+    color: #030213;
+  }
+  .ap-sub {
+    font-size: 13px;
+    color: rgba(3, 2, 19, 0.6);
+    margin-bottom: 36px;
+    line-height: 1.5;
+  }
+
+  /* Fields */
+  .ap-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+  .ap-fields--signup {
+    display: none;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .ap-fields--signup.is-visible {
+    display: flex;
+  }
+  .t-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-bottom: 16px;
+  }
+  .t-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(3, 2, 19, 0.6);
+  }
+  .t-input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(3, 2, 19, 0.1);
+    background: rgba(255, 255, 255, 0.75);
+    color: #030213;
+    font-size: 14px;
+    font-family: 'DM Sans', sans-serif !important;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+    backdrop-filter: blur(10px);
+    transition: border 0.2s, box-shadow 0.2s;
+  }
+  .t-input::placeholder {
+    color: rgba(3, 2, 19, 0.35);
+  }
+  .t-input:focus {
+    outline: none;
+    border-color: rgba(3, 2, 19, 0.5);
+    box-shadow: 0 0 0 3px rgba(3, 2, 19, 0.06);
+  }
+  .ap-pw-wrap {
+    position: relative;
+  }
+  .ap-pw-wrap .t-input {
+    padding-inline-end: 44px;
+  }
+  .ap-eye {
+    position: absolute;
+    top: 50%;
+    inset-inline-end: 14px;
+    transform: translateY(-50%);
+    color: rgba(3, 2, 19, 0.4);
+    cursor: pointer;
+    line-height: 0;
+  }
+  .ap-eye svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  /* Password strength */
+  .ap-pw-strength {
+    margin-top: 8px;
+    display: none;
+  }
+  .ap-pw-bars {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 5px;
+  }
+  .ap-pw-bar {
+    height: 3px;
+    flex: 1;
+    border-radius: 2px;
+    background: rgba(3, 2, 19, 0.08);
+    transition: background 0.25s;
+  }
+  .ap-pw-lbl {
+    font-size: 10.5px;
+    color: rgba(3, 2, 19, 0.4);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* Alerts */
+  .ap-alert {
+    padding: 12px 15px;
+    border-radius: 11px;
+    font-size: 12.5px;
+    font-weight: 600;
+    display: none;
+    margin-bottom: 18px;
+  }
+  .ap-alert.is-error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #dc2626;
+  }
+  .ap-alert.is-success {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    color: #059669;
+  }
+  .ap-alert.is-visible {
+    display: block;
+  }
+
+  /* Footer link */
+  .ap-switch {
+    text-align: center;
+    margin-top: 24px;
+    font-size: 12px;
+    color: rgba(3, 2, 19, 0.6);
+  }
+  .ap-switch a {
+    color: #030213;
+    font-weight: 700;
+  }
+
+  /* Role select inherits theme */
+  .t-input option {
+    background: #fff;
+    color: #030213;
+  }
+
+  #submit-btn {
+    background: #030213 !important;
+    color: #f8f8f6 !important;
+    border: 1px solid #030213 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-weight: 700;
+    transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  }
+  #submit-btn:hover:not(:disabled) {
+    background: rgba(3, 2, 19, 0.9) !important;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(3, 2, 19, 0.15);
+  }
+
+  /* ── Signal Field background ── */
+  #sf-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    opacity: 0.45; /* Tone down signal canvas lines for better contrast in light mode */
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<canvas id="sf-canvas" aria-hidden="true"></canvas>
+<a href="/" class="ap-back">
+  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+  Back
+</a>
+
+<div class="t-scope ap">
+  <!-- Brand panel -->
+  <div class="ap-brand" role="complementary" aria-label="Together branding">
+    <div class="ap-brand-grid" aria-hidden="true"></div>
+    <div class="ap-brand-circle" style="width:420px;height:420px;bottom:-110px;right:-110px" aria-hidden="true"></div>
+    <div class="ap-brand-circle" style="width:240px;height:240px;bottom:-30px;right:-30px" aria-hidden="true"></div>
+    <a href="/" class="ap-logo-link" aria-label="Together — home">
+      <img src="/static/img/logo-white.svg?v=3" alt="Together" style="height: 40px; width: auto;">
+    </a>
+    <div class="ap-brand-body">
+      <h2 class="ap-brand-h">Sign, speak,<br>read &mdash;<br>together.</h2>
+      <p class="ap-brand-p">AI-powered translation for Egyptian Sign Language and Arabic. Three products, every direction.</p>
+      <div class="ap-pillars" aria-label="Products">
+        <a href="/products/signlens" class="ap-pillar" style="text-decoration:none; color:inherit;">
+          <span class="ap-pillar-n">01</span>
+          <div>
+            <div style="font-weight:700; font-size:13px;">SignLens</div>
+            <div style="font-size:11px; opacity:0.6; margin-top:2px;">Real-time kinetic recognition</div>
+          </div>
+        </a>
+        <a href="/products/signbridge" class="ap-pillar" style="text-decoration:none; color:inherit;">
+          <span class="ap-pillar-n">02</span>
+          <div>
+            <div style="font-weight:700; font-size:13px;">SignBridge</div>
+            <div style="font-size:11px; opacity:0.6; margin-top:2px;">Reverse translation engine</div>
+          </div>
+        </a>
+        <a href="/products/openhands" class="ap-pillar" style="text-decoration:none; color:inherit;">
+          <span class="ap-pillar-n">03</span>
+          <div>
+            <div style="font-weight:700; font-size:13px;">OpenHands</div>
+            <div style="font-size:11px; opacity:0.6; margin-top:2px;">Enterprise video overlay</div>
+          </div>
+        </a>
+      </div>
+    </div>
+    <div class="ap-brand-foot">© 2026 Together Platform</div>
+  </div>
+
+  <!-- Form panel -->
+  <main class="ap-form">
+    <div class="ap-inner">
+      <nav class="ap-tabs" role="tablist" aria-label="Sign in or create account">
+        <button class="ap-tab is-active" id="tab-login" role="tab" aria-selected="true"
+                aria-controls="auth-form" onclick="switchTab('login')">Sign In</button>
+        <button class="ap-tab" id="tab-signup" role="tab" aria-selected="false"
+                aria-controls="auth-form" onclick="switchTab('signup')">Create Account</button>
+      </nav>
+
+      <h1 class="ap-h" id="form-heading">Sign in to Together</h1>
+      <p class="ap-sub" id="form-sub">Enter your email and password to continue.</p>
+
+      <div class="ap-alert is-error" id="form-error" role="alert" aria-live="polite"></div>
+      <div class="ap-alert is-success" id="form-success" role="status" aria-live="polite"></div>
+
+      <form id="auth-form" onsubmit="submitForm(event)" novalidate>
+        <!-- Signup-only: Full Name -->
+        <div class="ap-fields--signup" id="field-name">
+          <div class="t-field">
+            <label class="t-label" for="inp-name">Full Name</label>
+            <input type="text" id="inp-name" class="t-input" placeholder="Jane Smith" autocomplete="name">
+          </div>
+        </div>
+
+        <div class="ap-fields" id="common-fields">
+          <div class="t-field" style="margin-bottom:0">
+            <label class="t-label" for="inp-email">Email Address</label>
+            <input type="email" id="inp-email" class="t-input" placeholder="you@example.com"
+                   autocomplete="email" required>
+          </div>
+          <div class="t-field" style="margin-bottom:0">
+            <label class="t-label" for="inp-password">Password</label>
+            <div class="ap-pw-wrap">
+              <input type="password" id="inp-password" class="t-input" placeholder="••••••••"
+                     autocomplete="current-password" required oninput="checkStrength(this.value)">
+              <span class="ap-eye" onclick="togglePw('inp-password',this)" role="button"
+                    tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' ')togglePw('inp-password',this)"
+                    aria-label="Toggle password visibility">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
+                  <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+              </span>
+            </div>
+            <div class="ap-pw-strength" id="pw-strength" aria-hidden="true">
+              <div class="ap-pw-bars">
+                <div class="ap-pw-bar" id="bar1"></div><div class="ap-pw-bar" id="bar2"></div>
+                <div class="ap-pw-bar" id="bar3"></div><div class="ap-pw-bar" id="bar4"></div>
+              </div>
+              <span class="ap-pw-lbl" id="pw-label">Enter a password</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Signup-only: Confirm + Role -->
+        <div class="ap-fields--signup" id="field-extra" style="margin-bottom:0">
+          <div class="t-field" style="margin-bottom:0">
+            <label class="t-label" for="inp-confirm">Confirm Password</label>
+            <div class="ap-pw-wrap">
+              <input type="password" id="inp-confirm" class="t-input" placeholder="••••••••" autocomplete="new-password">
+              <span class="ap-eye" onclick="togglePw('inp-confirm',this)" role="button" tabindex="0"
+                    onkeydown="if(event.key==='Enter'||event.key===' ')togglePw('inp-confirm',this)"
+                    aria-label="Toggle password visibility">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
+                  <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+              </span>
+            </div>
+          </div>
+          <div class="t-field" style="margin-bottom:0">
+            <label class="t-label" for="inp-role">Your Role</label>
+            <select id="inp-role" class="t-input">
+              <option value="Deaf/HoH">Deaf / Hard of Hearing</option>
+              <option value="Speaker">Hearing / Speaker</option>
+            </select>
+          </div>
+        </div>
+
+        <button type="submit" class="t-btn t-btn--accent t-btn--block t-btn--lg" id="submit-btn"
+                style="margin-top:24px">
+          <span id="btn-label">Sign In</span>
+          <span id="btn-spinner" class="t-spinner" style="display:none;border-color:rgba(255,255,255,.3);border-top-color:#fff"></span>
+        </button>
+      </form>
+
+      <div class="ap-switch" id="auth-switch-login">
+        Don't have an account? <a href="#" onclick="switchTab('signup');return false">Create one</a>
+      </div>
+      <div class="ap-switch" id="auth-switch-signup" style="display:none">
+        Already have an account? <a href="#" onclick="switchTab('login');return false">Sign in</a>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentTab = 'login';
+  const params = new URLSearchParams(window.location.search);
+
+  function getSafeNextPath() {
+    const raw = params.get('next') || '';
+    if (!raw.startsWith('/') || raw.startsWith('//')) return '/dashboard';
+    return raw;
+  }
+
+  async function parseApiError(res, fallback) {
+    try { const d = await res.json(); return d.detail || fallback; }
+    catch (_) { return fallback; }
+  }
+
+  function isValidEmail(email) {
+    const n = (email || '').trim().toLowerCase();
+    if (!n || n.length > 254) return false;
+    return /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(n);
+  }
+
+  const urlTab = params.get('tab');
+  if (urlTab === 'signup') setTimeout(() => switchTab('signup'), 50);
+  if (params.get('registered') === '1') showSuccess('Account created! Please sign in.');
+  if (isAuthenticated()) window.location.href = getSafeNextPath();
+
+  function switchTab(tab) {
+    currentTab = tab;
+    document.getElementById('tab-login').classList.toggle('is-active', tab === 'login');
+    document.getElementById('tab-login').setAttribute('aria-selected', tab === 'login');
+    document.getElementById('tab-signup').classList.toggle('is-active', tab === 'signup');
+    document.getElementById('tab-signup').setAttribute('aria-selected', tab === 'signup');
+    document.querySelectorAll('.ap-fields--signup').forEach(el => el.classList.toggle('is-visible', tab === 'signup'));
+    document.getElementById('pw-strength').style.display = tab === 'signup' ? 'block' : 'none';
+    document.getElementById('inp-password').autocomplete = tab === 'login' ? 'current-password' : 'new-password';
+    document.getElementById('form-heading').textContent = tab === 'login' ? 'Sign in to Together' : 'Create your account';
+    document.getElementById('form-sub').textContent = tab === 'login'
+      ? 'Enter your email and password to continue.'
+      : 'Fill in your details to get started for free.';
+    document.getElementById('btn-label').textContent = tab === 'login' ? 'Sign In' : 'Create Account';
+    document.getElementById('auth-switch-login').style.display = tab === 'login' ? 'block' : 'none';
+    document.getElementById('auth-switch-signup').style.display = tab === 'signup' ? 'block' : 'none';
+    document.getElementById('form-error').classList.remove('is-visible');
+    document.getElementById('form-success').classList.remove('is-visible');
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('form-error');
+    el.textContent = msg; el.classList.add('is-visible');
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  function clearError() { document.getElementById('form-error').classList.remove('is-visible'); }
+  function showSuccess(msg) {
+    const el = document.getElementById('form-success');
+    el.textContent = msg; el.classList.add('is-visible');
+  }
+  function setLoading(state) {
+    document.getElementById('submit-btn').disabled = state;
+    document.getElementById('btn-spinner').style.display = state ? 'inline-block' : 'none';
+    document.getElementById('btn-label').style.opacity = state ? '0.6' : '1';
+  }
+
+  function togglePw(inputId, el) {
+    const input = document.getElementById(inputId);
+    input.type = input.type === 'password' ? 'text' : 'password';
+    el.style.color = input.type === 'text' ? 'var(--accent)' : 'var(--faint)';
+    el.setAttribute('aria-label', input.type === 'text' ? 'Hide password' : 'Show password');
+  }
+
+  const BAR_COLORS = ['#ef4444','#f97316','#eab308','#22c55e'];
+  const BAR_LABELS = ['Very weak','Weak','Good','Strong'];
+  function checkStrength(pw) {
+    if (currentTab !== 'signup') return;
+    let s = 0;
+    if (pw.length >= 8) s++;
+    if (/[A-Z]/.test(pw)) s++;
+    if (/\d/.test(pw)) s++;
+    if (/[@$!%*?&]/.test(pw)) s++;
+    for (let i = 1; i <= 4; i++) {
+      document.getElementById('bar'+i).style.background = i <= s ? BAR_COLORS[s-1] : 'var(--border)';
+    }
+    const lbl = document.getElementById('pw-label');
+    lbl.textContent = pw.length === 0 ? 'Enter a password' : (BAR_LABELS[s-1] || 'Very weak');
+    lbl.style.color = pw.length === 0 ? 'var(--faint)' : BAR_COLORS[s-1];
+  }
+
+  async function submitForm(e) {
+    e.preventDefault(); clearError(); setLoading(true);
+    const email = document.getElementById('inp-email').value.trim();
+    const password = document.getElementById('inp-password').value;
+    if (!email || !password) { showError('Please fill in all required fields.'); setLoading(false); return; }
+    if (!isValidEmail(email)) { showError('Please enter a valid email address.'); setLoading(false); return; }
+    try {
+      if (currentTab === 'login') {
+        const body = new URLSearchParams(); body.append('username', email.toLowerCase()); body.append('password', password);
+        const res = await fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body, credentials:'include' });
+        if (!res.ok) throw new Error(await parseApiError(res,'Invalid credentials.'));
+        const data = await res.json();
+        setToken(data.access_token);
+        window.location.href = getSafeNextPath();
+      } else {
+        const fullName = document.getElementById('inp-name').value.trim();
+        const confirm  = document.getElementById('inp-confirm').value;
+        const role     = document.getElementById('inp-role').value;
+        if (!fullName) { showError('Please enter your full name.'); setLoading(false); return; }
+        if (password.length < 8) { showError('Password must be at least 8 characters.'); setLoading(false); return; }
+        if (password !== confirm) { showError('Passwords do not match.'); setLoading(false); return; }
+        const res = await fetch('/api/auth/signup', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ full_name: fullName, email: email.toLowerCase(), password, role }) });
+        if (!res.ok) throw new Error(await parseApiError(res,'Registration failed.'));
+        showSuccess('Account created! You can now sign in.');
+        switchTab('login');
+        document.getElementById('inp-password').value = '';
+        document.getElementById('inp-confirm').value = '';
+      }
+    } catch (err) { showError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  /* Signal Field */
+  (function(){
+    var c=document.getElementById('sf-canvas');if(!c)return;
+    var ctx=c.getContext('2d'),rm=matchMedia('(prefers-reduced-motion:reduce)');
+    var W,H,dots=[],mx=-999,my=-999,raf=0;
+    var N=40,DIST=130,REPEL=80,SPEED=0.3;
+    function resize(){W=c.width=innerWidth;H=c.height=innerHeight}
+    function mkDot(){return{x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*SPEED,vy:(Math.random()-.5)*SPEED,col:Math.random()<.65?'#1f8a82':'#e2b483',r:Math.random()*1.2+.8}}
+    function init(){resize();dots=[];for(var i=0;i<N;i++)dots.push(mkDot())}
+    function draw(){
+      ctx.clearRect(0,0,W,H);
+      for(var i=0;i<dots.length;i++){var d=dots[i];var dx=d.x-mx,dy=d.y-my,ds=dx*dx+dy*dy;if(ds<REPEL*REPEL&&ds>0){var f=(REPEL*REPEL-ds)/(REPEL*REPEL)*.8;d.vx+=dx/Math.sqrt(ds)*f*.03;d.vy+=dy/Math.sqrt(ds)*f*.03}d.vx*=.99;d.vy*=.99;d.x+=d.vx;d.y+=d.vy;if(d.x<0||d.x>W)d.vx*=-1;if(d.y<0||d.y>H)d.vy*=-1}
+      for(var i=0;i<dots.length;i++)for(var j=i+1;j<dots.length;j++){var dx=dots[i].x-dots[j].x,dy=dots[i].y-dots[j].y,d2=Math.sqrt(dx*dx+dy*dy);if(d2<DIST){ctx.strokeStyle='rgba(31,138,130,'+(1-d2/DIST)*.2+')';ctx.lineWidth=.7;ctx.beginPath();ctx.moveTo(dots[i].x,dots[i].y);ctx.lineTo(dots[j].x,dots[j].y);ctx.stroke()}}
+      for(var i=0;i<dots.length;i++){var d=dots[i];ctx.fillStyle=d.col+'99';ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill()}
+      if(!document.hidden&&!rm.matches)raf=requestAnimationFrame(draw);
+    }
+    function start(){if(!raf&&!document.hidden&&!rm.matches)raf=requestAnimationFrame(draw)}
+    function stop(){if(raf){cancelAnimationFrame(raf);raf=0}}
+    addEventListener('resize',function(){resize()});
+    addEventListener('pointermove',function(e){mx=e.clientX;my=e.clientY},{passive:true});
+    document.addEventListener('visibilitychange',function(){document.hidden?stop():start()});
+    init();start();
+  })();
+</script>
+{% endblock %}

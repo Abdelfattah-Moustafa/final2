@@ -1,0 +1,61 @@
+{% extends "_inner_base.html" %}
+{% block title %}About Us — Together{% endblock %}
+{% block content %}
+<canvas id="sf-canvas" aria-hidden="true"></canvas>
+<div class="pg-hero">
+  <span class="pg-badge">About Us</span>
+  <h1 class="pg-h1">Built by people<br><em>who give a damn.</em></h1>
+  <p class="pg-lead">Together was founded to make sign language communication as effortless as a phone call — for everyone, everywhere, with no intermediary and no waiting.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Our mission</h2>
+  <p>Communication is a human right. Yet 466 million people worldwide live with disabling hearing loss, and the vast majority of the hearing world does not know sign language. Together exists to close that gap — not by replacing human interpreters, but by filling the enormous space where no interpreter is available: the pharmacy counter, the classroom question, the lunch table conversation, the job interview.</p>
+  <p>We believe on-device AI is the right architecture for this problem. Your camera feed should never leave your device. Your conversations are private. Your autonomy is preserved.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Our story</h2>
+  <p>Together began in 2024 as a research project at a university accessibility lab. The founding team — a Deaf software engineer, a computational linguist, and an ML researcher — were frustrated that the best available ASL recognition tools required cloud uploads, had small vocabularies, and offered no Arabic support.</p>
+  <p>We spent 18 months building a browser-native pipeline: MediaPipe landmarks, a quantized TFLite model for ASL, a PyTorch CNN-GRU for ArSL, and a live WebRTC meeting layer. The result is Together — a platform that works in the browser, offline, in any language, with no server in the middle.</p>
+</div>
+
+<div class="pg-section">
+  <h2>The team</h2>
+  <div class="uc-grid">
+    <div class="uc-card">
+      <div class="uc-title">Layla Hassan — CEO &amp; Co-founder</div>
+      <p class="uc-desc">Deaf software engineer and accessibility advocate. 10 years in distributed systems at a major tech firm before co-founding Together. ASL and ArSL fluent.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-title">Dr. James Osei — CTO &amp; Co-founder</div>
+      <p class="uc-desc">ML researcher specializing in on-device vision models. PhD in Computer Vision (UCL). Led the TFLite and ONNX model pipelines.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-title">Nour Al-Rashid — Head of Linguistics</div>
+      <p class="uc-desc">Computational linguist and ArSL researcher. Built the Egyptian ArSL dataset and annotation framework. Fluent in Arabic, ArSL, and ASL.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-title">Marco Silva — Head of Design</div>
+      <p class="uc-desc">Product designer with a background in inclusive design and design systems. Led the Together UI system — teal-sand palette, Thmanyah typography, and liquid glass aesthetics.</p>
+    </div>
+  </div>
+</div>
+
+<div class="pg-section">
+  <h2>Our values</h2>
+  <div class="uc-grid">
+    <div class="uc-card"><div class="uc-title">Privacy first</div><p class="uc-desc">All AI runs on your device. No video leaves your browser. No user data is sold or shared.</p></div>
+    <div class="uc-card"><div class="uc-title">Language equality</div><p class="uc-desc">ASL and ArSL receive equal investment. No sign language is an afterthought on this platform.</p></div>
+    <div class="uc-card"><div class="uc-title">Community co-design</div><p class="uc-desc">Deaf and HoH community members sit on our advisory board and participate in every major product decision.</p></div>
+    <div class="uc-card"><div class="uc-title">Open science</div><p class="uc-desc">We publish our research, share our annotation tools, and contribute to public datasets wherever legally possible.</p></div>
+  </div>
+</div>
+
+<div class="cta-strip">
+  <h3>Join the mission</h3>
+  <p>We're hiring engineers, linguists, and community advocates. We also welcome research partnerships and enterprise pilots.</p>
+  <a href="/partnership">Partner with Us</a>
+  <a href="/contact" class="sec">Get in Touch</a>
+</div>
+{% endblock %}

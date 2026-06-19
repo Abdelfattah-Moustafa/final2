@@ -1,0 +1,70 @@
+{% extends "_inner_base.html" %}
+{% block title %}VoiceBridge — Sign to Speech{% endblock %}
+{% block content %}
+<canvas id="sf-canvas" aria-hidden="true"></canvas>
+<div class="pg-hero">
+  <span class="pg-badge">Sign → Speech</span>
+  <h1 class="pg-h1">Signs that<br><em>speak for you.</em></h1>
+  <p class="pg-lead">VoiceBridge converts live ASL directly to natural spoken speech — so you can communicate with hearing people face to face, without a phone screen between you.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Performance at a glance</h2>
+  <div class="spec-grid">
+    <div class="spec-card"><div class="spec-val">&lt;80ms</div><div class="spec-key">End-to-end pipeline</div></div>
+    <div class="spec-card"><div class="spec-val">12</div><div class="spec-key">Voice styles available</div></div>
+    <div class="spec-card"><div class="spec-val">92%</div><div class="spec-key">Recognition accuracy</div></div>
+    <div class="spec-card"><div class="spec-val">Offline</div><div class="spec-key">Works without internet</div></div>
+  </div>
+</div>
+
+<div class="pg-section">
+  <h2>How it works</h2>
+  <p>VoiceBridge chains HandScript's recognition output directly into the Web Speech Synthesis API. As HandScript emits a confident prediction (above the configurable confidence threshold), VoiceBridge queues the word or phrase for speech. The synthesis uses the browser's built-in TTS voices — no external API call is made, preserving offline capability.</p>
+  <p>A 200ms phoneme-based debounce prevents partial signs from triggering early utterances. Sentence boundaries are detected heuristically by sign-pause gaps longer than 600ms, at which point the buffered text is flushed as a complete utterance with natural prosody.</p>
+</div>
+
+<div class="pg-section">
+  <h2>Use cases</h2>
+  <div class="uc-grid">
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h18M3 9h18M3 15h14"/></svg></div>
+      <div class="uc-title">Pharmacy & healthcare</div>
+      <p class="uc-desc">Ask for a medication, describe symptoms, or follow up on results — hands-free, voice-forward, without paper.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
+      <div class="uc-title">Travel & public services</div>
+      <p class="uc-desc">Navigate airports, train stations, and government counters with confidence. VoiceBridge speaks your signs to staff.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M12 12v.01"/></svg></div>
+      <div class="uc-title">Customer service</div>
+      <p class="uc-desc">Retail, banking, and food service counters equipped with a tablet running VoiceBridge become accessible to Deaf customers instantly.</p>
+    </div>
+    <div class="uc-card">
+      <div class="uc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg></div>
+      <div class="uc-title">Social &amp; casual</div>
+      <p class="uc-desc">Dinner tables, parties, casual hallway chats — VoiceBridge makes spontaneous conversation natural again.</p>
+    </div>
+  </div>
+</div>
+
+<div class="pg-section">
+  <h2>Voice customization</h2>
+  <p>VoiceBridge exposes the full Web Speech API voice roster — on most platforms this includes a dozen or more natural-sounding voices across genders and accents. The selected voice and speech rate are persisted to localStorage. A dedicated Voice panel in the dashboard settings lets users audition each option.</p>
+</div>
+
+<div class="cta-strip">
+  <h3>Experience VoiceBridge</h3>
+  <p>Switch to Sign to Speech in the English dashboard. Works in Chrome, Edge, and Safari.</p>
+  <a href="/dashboard?lang=en" class="btn-magnetic btn-magnetic-primary" data-cursor="Enter">
+    <span class="btn-magnetic-fill"></span>
+    <span class="btn-magnetic-text">Open Dashboard</span>
+  </a>
+  <a href="/demo" class="btn-magnetic btn-magnetic-outline" data-cursor="Demo">
+    <span class="btn-magnetic-fill"></span>
+    <span class="btn-magnetic-text">Book a Demo</span>
+  </a>
+</div>
+{% endblock %}
