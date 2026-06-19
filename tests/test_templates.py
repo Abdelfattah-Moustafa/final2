@@ -98,7 +98,7 @@ def test_dashboard_links_design_system(tpl):
 @pytest.mark.parametrize("tpl", DASHBOARDS)
 def test_legacy_js_hooks_present(tpl):
     html = render(tpl)
-    assert html.count('class="d-panel module-panel') == 5, "expected 5 module panels"
+    assert html.count('class="d-panel module-panel') == 6, "expected 6 module panels"
     assert "meet-entry-row" in html
     assert "meet-stage" in html
     assert "meeting-avatar-corner" in html
