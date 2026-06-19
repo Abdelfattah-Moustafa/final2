@@ -845,6 +845,10 @@ html[data-theme="light"] .d-blob{opacity:calc(.38*var(--intensity)+.04)}
 </script>
 
 <script src="/static/js/app.js"></script>
+<!-- SignBridge 3D avatar: three.js (loaded above) + GLTFLoader + Kalidokit -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/kalidokit@1.1/dist/kalidokit.umd.js"></script>
+<script src="/static/js/signbridge-avatar.js?v=1"></script>
 <script>
   // ── Global JavaScript Error Boundary ──
   window.onerror = function(message, source, lineno, colno, error) {
