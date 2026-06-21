@@ -33,32 +33,33 @@ SPLIT = "US"          # "US" = unseen sentences (composition test), "SI" = unsee
 USE_FACE = False      # face landmarks are mostly noise for signing
 DROP_Z = True         # MediaPipe z from a single camera is unreliable
 CONF_THRESHOLD = 0.1
-FRAME_STRIDE = 2      # subsample long sequences at load time
-MAX_FRAMES = 256      # cap (after striding)
+FRAME_STRIDE = 1      # keep full temporal resolution (finer CTC alignment)
+MAX_FRAMES = 384      # cap (after striding)
 
-CONV_CH = 128
-GRU_HIDDEN = 160
+CONV_CH = 160
+GRU_HIDDEN = 256
 GRU_LAYERS = 2
-DROPOUT = 0.5
+DROPOUT = 0.3
+USE_VELOCITY = True   # append frame-to-frame motion (big win for sign language)
 
 BATCH_SIZE = 16
 LR = 3e-4
-WEIGHT_DECAY = 3e-4
+WEIGHT_DECAY = 1e-4
 MAX_EPOCHS = 120
-EARLY_STOP_PATIENCE = 12
+EARLY_STOP_PATIENCE = 15
 GRAD_CLIP = 5.0
 NUM_WORKERS = 2
 SEED = 1337
 
-# augmentation (train only)
+# augmentation (train only) — moderate: enough to not overfit, not so much it underfits
 AUG_ROTATE_DEG = 13.0
 AUG_SCALE = 0.10
 AUG_JITTER = 0.01
 AUG_FRAME_DROPOUT = 0.10
 AUG_TIME_WARP = 0.15
 AUG_MIRROR_PROB = 0.5
-AUG_TIME_MASK_N = 2       # SpecAugment-style: number of temporal masks
-AUG_TIME_MASK_MAX = 12    # max length (frames) of each temporal mask
+AUG_TIME_MASK_N = 1       # SpecAugment-style: number of temporal masks (mild)
+AUG_TIME_MASK_MAX = 8     # max length (frames) of each temporal mask
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -233,6 +234,10 @@ class PoseDataset(Dataset):
         if self.train:
             x = augment(x)
         x = x.reshape(len(x), -1)           # (T, P*2)
+        if USE_VELOCITY:
+            vel = np.zeros_like(x)
+            vel[1:] = x[1:] - x[:-1]        # motion between consecutive frames
+            x = np.concatenate([x, vel], axis=1)   # (T, P*2 * 2)
         return torch.from_numpy(x).float(), torch.tensor(gl, dtype=torch.long)
 
 
@@ -359,8 +364,10 @@ def main():
     test_rows = read_split(SPLIT, "test")
     print(f"[{SPLIT}] train={len(train_rows)} dev={len(dev_rows)} test={len(test_rows)}")
 
-    # infer per-frame feature dim from one sample: (T, P, C) -> P*C
+    # infer per-frame feature dim from one sample: (T, P, C) -> P*C (x2 if velocity)
     in_dim = int(np.prod(load_pose(train_rows[0][0]).shape[1:]))
+    if USE_VELOCITY:
+        in_dim *= 2
     print("feature dim:", in_dim)
 
     model = CSLRNet(in_dim, NUM_CLASSES).to(DEVICE)
