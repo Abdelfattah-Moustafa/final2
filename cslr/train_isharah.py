@@ -36,30 +36,35 @@ CONF_THRESHOLD = 0.1
 FRAME_STRIDE = 1      # keep full temporal resolution (finer CTC alignment)
 MAX_FRAMES = 384      # cap (after striding)
 
-CONV_CH = 160
-GRU_HIDDEN = 256
-GRU_LAYERS = 2
-DROPOUT = 0.3
+# ── Transformer encoder (capable but regularized, not just "big") ──
+D_MODEL = 256
+N_HEAD = 4
+N_LAYERS = 4
+FFN_DIM = 512
+DROPOUT = 0.4
 USE_VELOCITY = True   # append frame-to-frame motion (big win for sign language)
 
 BATCH_SIZE = 16
 LR = 3e-4
-WEIGHT_DECAY = 1e-4
-MAX_EPOCHS = 120
-EARLY_STOP_PATIENCE = 15
-GRAD_CLIP = 5.0
+WEIGHT_DECAY = 1e-2   # AdamW + Transformer likes stronger decay
+WARMUP_EPOCHS = 3
+MAX_EPOCHS = 150
+EARLY_STOP_PATIENCE = 18
+GRAD_CLIP = 1.0
 NUM_WORKERS = 2
 SEED = 1337
 
-# augmentation (train only) — moderate: enough to not overfit, not so much it underfits
-AUG_ROTATE_DEG = 13.0
-AUG_SCALE = 0.10
-AUG_JITTER = 0.01
-AUG_FRAME_DROPOUT = 0.10
-AUG_TIME_WARP = 0.15
+# augmentation (train only) — HEAVY: the main defense against memorizing the
+# ~1000 sentence templates. Forces the model to learn reusable gloss features.
+AUG_ROTATE_DEG = 15.0
+AUG_SCALE = 0.12
+AUG_JITTER = 0.02
+AUG_FRAME_DROPOUT = 0.15
+AUG_TIME_WARP = 0.20
 AUG_MIRROR_PROB = 0.5
-AUG_TIME_MASK_N = 1       # SpecAugment-style: number of temporal masks (mild)
-AUG_TIME_MASK_MAX = 8     # max length (frames) of each temporal mask
+AUG_TIME_MASK_N = 2       # SpecAugment-style temporal masks
+AUG_TIME_MASK_MAX = 16    # max length (frames) of each temporal mask
+AUG_JOINT_DROPOUT = 0.10  # randomly zero whole keypoints for the clip
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -217,6 +222,11 @@ def augment(x):
             w = np.random.randint(1, AUG_TIME_MASK_MAX + 1)
             s = np.random.randint(0, len(x) - w)
             x[s:s + w] = 0.0
+    # joint dropout: zero whole keypoints for the entire clip
+    if AUG_JOINT_DROPOUT > 0:
+        P = x.shape[1]
+        mask = np.random.rand(P) < AUG_JOINT_DROPOUT
+        x[:, mask, :] = 0.0
     return x
 
 
@@ -276,25 +286,48 @@ class SepConv1d(nn.Module):
         return self.act(self.bn(self.pw(self.dw(x))))
 
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=4096):
+        super().__init__()
+        pe = torch.zeros(max_len, d_model)
+        pos = torch.arange(0, max_len).unsqueeze(1).float()
+        div = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(pos * div)
+        pe[:, 1::2] = torch.cos(pos * div)
+        self.register_buffer("pe", pe.unsqueeze(0))   # (1, max_len, d_model)
+
+    def forward(self, x):                              # (B, T, d_model)
+        return x + self.pe[:, :x.size(1)]
+
+
 class CSLRNet(nn.Module):
+    """Conv front-end (downsample x4) -> Transformer encoder -> CTC head."""
+
     def __init__(self, in_dim, n_classes):
         super().__init__()
-        self.proj = nn.Linear(in_dim, CONV_CH)
-        self.conv1 = SepConv1d(CONV_CH, CONV_CH, stride=2)
-        self.conv2 = SepConv1d(CONV_CH, CONV_CH, stride=2)
-        self.drop = nn.Dropout(DROPOUT)
-        self.gru = nn.GRU(CONV_CH, GRU_HIDDEN, GRU_LAYERS, batch_first=True,
-                          bidirectional=True, dropout=DROPOUT if GRU_LAYERS > 1 else 0)
-        self.head = nn.Linear(2 * GRU_HIDDEN, n_classes)
+        self.proj = nn.Linear(in_dim, D_MODEL)
+        self.conv1 = SepConv1d(D_MODEL, D_MODEL, stride=2)
+        self.conv2 = SepConv1d(D_MODEL, D_MODEL, stride=2)
+        self.pos = PositionalEncoding(D_MODEL)
+        self.in_drop = nn.Dropout(DROPOUT)
+        layer = nn.TransformerEncoderLayer(
+            d_model=D_MODEL, nhead=N_HEAD, dim_feedforward=FFN_DIM,
+            dropout=DROPOUT, batch_first=True, activation="gelu", norm_first=True)
+        self.encoder = nn.TransformerEncoder(layer, num_layers=N_LAYERS)
+        self.head = nn.Linear(D_MODEL, n_classes)
 
-    def forward(self, x):                   # x: (B, T, F)
-        x = self.proj(x)                    # (B, T, C)
-        x = x.transpose(1, 2)               # (B, C, T)
+    def forward(self, x, lens):             # x: (B, T, F), lens: raw input lengths
+        x = self.proj(x)                    # (B, T, D)
+        x = x.transpose(1, 2)               # (B, D, T)
         x = self.conv1(x)
-        x = self.conv2(x)
-        x = x.transpose(1, 2)               # (B, T', C)
-        x = self.drop(x)
-        x, _ = self.gru(x)
+        x = self.conv2(x)                   # downsample x4
+        x = x.transpose(1, 2)               # (B, T', D)
+        x = self.in_drop(self.pos(x))
+        # padding mask: True where padded (so attention ignores it)
+        out_lens = torch.tensor([out_len(int(l)) for l in lens], device=x.device)
+        Tp = x.size(1)
+        pad_mask = torch.arange(Tp, device=x.device)[None, :] >= out_lens[:, None]
+        x = self.encoder(x, src_key_padding_mask=pad_mask)
         x = self.head(x)                    # (B, T', n_classes)
         return x.log_softmax(-1)
 
@@ -338,7 +371,7 @@ def evaluate(model, loader):
     tot_err, tot_len = 0.0, 0
     for padded, lens, targets, tlens in loader:
         padded = padded.to(DEVICE)
-        logp = model(padded).cpu()          # (B, T', C)
+        logp = model(padded, lens).cpu()    # (B, T', C)
         out_lens = [out_len(int(l)) for l in lens]
         off = 0
         refs = []
@@ -385,13 +418,17 @@ def main():
     print(f"device: {DEVICE} | steps/epoch: {len(train_loader)}")
     best_wer, best_state, bad = 1e9, None, 0
     for epoch in range(1, MAX_EPOCHS + 1):
+        # linear LR warmup for the first WARMUP_EPOCHS (stabilizes Transformer)
+        if epoch <= WARMUP_EPOCHS:
+            for g in opt.param_groups:
+                g["lr"] = LR * epoch / WARMUP_EPOCHS
         model.train()
         running = 0.0
         import time as _t
         _t0 = _t.time()
         for step, (padded, lens, targets, tlens) in enumerate(train_loader):
             padded, targets = padded.to(DEVICE), targets.to(DEVICE)
-            logp = model(padded)                      # (B, T', C)
+            logp = model(padded, lens)                # (B, T', C)
             logp = logp.transpose(0, 1)               # (T', B, C) for CTC
             in_lens = torch.tensor([out_len(int(l)) for l in lens], device=DEVICE)
             loss = ctc(logp, targets, in_lens, tlens.to(DEVICE))
@@ -405,7 +442,8 @@ def main():
                 print(f"  e{epoch} step {step}/{len(train_loader)}  "
                       f"loss {loss.item():.3f}  {rate:.1f} it/s", flush=True)
         dev_wer = evaluate(model, dev_loader)
-        sched.step(dev_wer)
+        if epoch > WARMUP_EPOCHS:
+            sched.step(dev_wer)
         print(f"epoch {epoch:3d}  loss {running/len(train_loader):.3f}  dev_WER {dev_wer:.3f}")
 
         if dev_wer < best_wer - 1e-4:
