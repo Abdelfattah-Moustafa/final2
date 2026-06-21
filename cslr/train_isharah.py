@@ -366,11 +366,14 @@ def main():
     dev_loader = make_loader(dev_rows, False)
     test_loader = make_loader(test_rows, False)
 
+    print(f"device: {DEVICE} | steps/epoch: {len(train_loader)}")
     best_wer, best_state, bad = 1e9, None, 0
     for epoch in range(1, MAX_EPOCHS + 1):
         model.train()
         running = 0.0
-        for padded, lens, targets, tlens in train_loader:
+        import time as _t
+        _t0 = _t.time()
+        for step, (padded, lens, targets, tlens) in enumerate(train_loader):
             padded, targets = padded.to(DEVICE), targets.to(DEVICE)
             logp = model(padded)                      # (B, T', C)
             logp = logp.transpose(0, 1)               # (T', B, C) for CTC
@@ -381,6 +384,10 @@ def main():
             nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
             opt.step()
             running += loss.item()
+            if step % 50 == 0:
+                rate = (step + 1) / max(1e-6, _t.time() - _t0)
+                print(f"  e{epoch} step {step}/{len(train_loader)}  "
+                      f"loss {loss.item():.3f}  {rate:.1f} it/s", flush=True)
         dev_wer = evaluate(model, dev_loader)
         sched.step(dev_wer)
         print(f"epoch {epoch:3d}  loss {running/len(train_loader):.3f}  dev_WER {dev_wer:.3f}")
