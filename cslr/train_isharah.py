@@ -350,8 +350,8 @@ def main():
     test_rows = read_split(SPLIT, "test")
     print(f"[{SPLIT}] train={len(train_rows)} dev={len(dev_rows)} test={len(test_rows)}")
 
-    # infer feature dim from one sample
-    in_dim = load_pose(train_rows[0][0]).reshape(1, -1).shape[1]
+    # infer per-frame feature dim from one sample: (T, P, C) -> P*C
+    in_dim = int(np.prod(load_pose(train_rows[0][0]).shape[1:]))
     print("feature dim:", in_dim)
 
     model = CSLRNet(in_dim, NUM_CLASSES).to(DEVICE)
