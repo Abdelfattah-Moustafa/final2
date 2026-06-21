@@ -41,12 +41,12 @@ D_MODEL = 256
 N_HEAD = 4
 N_LAYERS = 4
 FFN_DIM = 512
-DROPOUT = 0.4
+DROPOUT = 0.3
 USE_VELOCITY = True   # append frame-to-frame motion (big win for sign language)
 
 BATCH_SIZE = 16
 LR = 3e-4
-WEIGHT_DECAY = 1e-2   # AdamW + Transformer likes stronger decay
+WEIGHT_DECAY = 1e-3   # moderate decay
 WARMUP_EPOCHS = 3
 MAX_EPOCHS = 150
 EARLY_STOP_PATIENCE = 18
@@ -54,17 +54,16 @@ GRAD_CLIP = 1.0
 NUM_WORKERS = 2
 SEED = 1337
 
-# augmentation (train only) — HEAVY: the main defense against memorizing the
-# ~1000 sentence templates. Forces the model to learn reusable gloss features.
-AUG_ROTATE_DEG = 15.0
-AUG_SCALE = 0.12
-AUG_JITTER = 0.02
-AUG_FRAME_DROPOUT = 0.15
-AUG_TIME_WARP = 0.20
+# augmentation (train only) — MODERATE: fights memorization without starving learning
+AUG_ROTATE_DEG = 13.0
+AUG_SCALE = 0.10
+AUG_JITTER = 0.015
+AUG_FRAME_DROPOUT = 0.10
+AUG_TIME_WARP = 0.15
 AUG_MIRROR_PROB = 0.5
-AUG_TIME_MASK_N = 2       # SpecAugment-style temporal masks
-AUG_TIME_MASK_MAX = 16    # max length (frames) of each temporal mask
-AUG_JOINT_DROPOUT = 0.10  # randomly zero whole keypoints for the clip
+AUG_TIME_MASK_N = 1       # SpecAugment-style temporal masks
+AUG_TIME_MASK_MAX = 10    # max length (frames) of each temporal mask
+AUG_JOINT_DROPOUT = 0.05  # randomly zero whole keypoints for the clip
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
