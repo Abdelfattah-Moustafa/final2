@@ -37,13 +37,13 @@ FRAME_STRIDE = 2      # subsample long sequences at load time
 MAX_FRAMES = 256      # cap (after striding)
 
 CONV_CH = 128
-GRU_HIDDEN = 192
+GRU_HIDDEN = 160
 GRU_LAYERS = 2
-DROPOUT = 0.3
+DROPOUT = 0.5
 
 BATCH_SIZE = 16
 LR = 3e-4
-WEIGHT_DECAY = 1e-4
+WEIGHT_DECAY = 3e-4
 MAX_EPOCHS = 120
 EARLY_STOP_PATIENCE = 12
 GRAD_CLIP = 5.0
@@ -57,6 +57,8 @@ AUG_JITTER = 0.01
 AUG_FRAME_DROPOUT = 0.10
 AUG_TIME_WARP = 0.15
 AUG_MIRROR_PROB = 0.5
+AUG_TIME_MASK_N = 2       # SpecAugment-style: number of temporal masks
+AUG_TIME_MASK_MAX = 12    # max length (frames) of each temporal mask
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -207,6 +209,13 @@ def augment(x):
         new_len = max(4, int(round(len(x) * factor)))
         idx = np.clip(np.round(np.linspace(0, len(x) - 1, new_len)).astype(int), 0, len(x) - 1)
         x = x[idx]
+    # SpecAugment-style temporal masking: zero short spans so the model can't
+    # lean on a memorized full-sequence pattern -> forces gloss-level features
+    if AUG_TIME_MASK_N > 0 and len(x) > AUG_TIME_MASK_MAX * 2:
+        for _ in range(AUG_TIME_MASK_N):
+            w = np.random.randint(1, AUG_TIME_MASK_MAX + 1)
+            s = np.random.randint(0, len(x) - w)
+            x[s:s + w] = 0.0
     return x
 
 
