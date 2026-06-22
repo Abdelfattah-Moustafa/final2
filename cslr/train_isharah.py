@@ -166,23 +166,49 @@ def load_pose(path):
         data = data[::FRAME_STRIDE]
     if len(data) > MAX_FRAMES:
         data = data[:MAX_FRAMES]
-    data = normalize(data)
-    return data.astype(np.float32)
+    return data.astype(np.float32)            # raw kept points; normalized later
 
 
-def normalize(data):
-    """Center on mid-shoulder, scale by shoulder width. data: (T, P, 2/3)."""
-    # POSE landmarks come first; MediaPipe shoulders are 11 (left) and 12 (right)
-    ls, rs = data[:, 11, :2], data[:, 12, :2]
+# kept-array layout (face dropped): pose[0:33], left_hand[33:54], right_hand[54:75]
+POSE, LH, RH = slice(0, 33), slice(33, 54), slice(54, 75)
+# MediaPipe pose symmetric L/R landmark pairs (for correct horizontal mirror)
+POSE_PAIRS = [(1, 4), (2, 5), (3, 6), (7, 8), (9, 10), (11, 12), (13, 14),
+              (15, 16), (17, 18), (19, 20), (21, 22), (23, 24), (25, 26),
+              (27, 28), (29, 30), (31, 32)]
+
+
+def _norm_hand(hand):
+    """Local hand normalization: center on wrist, scale by hand span -> finger
+    articulation at full scale. hand: (T, 21, 2). Missing frames -> zeros."""
+    out = hand.copy()
+    wrist = hand[:, 0:1, :]
+    out = out - wrist                                    # wrist-relative
+    span = np.linalg.norm(hand[:, 9, :] - hand[:, 0, :], axis=-1)  # wrist->mid MCP
+    span = np.where(span > 1e-3, span, 1.0)
+    out = out / span[:, None, None]
+    present = np.abs(hand).sum((1, 2)) > 0
+    out[~present] = 0.0
+    return out
+
+
+def build_features(x):
+    """x: (T, P, 2) raw -> (T, F) features.
+    body kept in body-space (preserves hand *location*); hands ALSO added in
+    local wrist-space (preserves finger *articulation*)."""
+    body = x.copy()
+    ls, rs = x[:, 11, :2], x[:, 12, :2]
     valid = (np.abs(ls).sum(-1) > 0) & (np.abs(rs).sum(-1) > 0)
-    if valid.sum() == 0:
-        return data
-    center = ((ls + rs) / 2.0)[valid].mean(0)
-    width = np.linalg.norm((ls - rs)[valid], axis=-1).mean()
-    width = width if width > 1e-3 else 1.0
-    data = data.copy()
-    data[..., :2] = (data[..., :2] - center) / width
-    return data
+    if valid.sum() > 0:
+        center = ((ls + rs) / 2.0)[valid].mean(0)
+        width = np.linalg.norm((ls - rs)[valid], axis=-1).mean()
+        width = width if width > 1e-3 else 1.0
+        body[..., :2] = (body[..., :2] - center) / width
+    lh = _norm_hand(x[:, LH, :2])
+    rh = _norm_hand(x[:, RH, :2])
+    T = len(x)
+    return np.concatenate([body.reshape(T, -1),
+                           lh.reshape(T, -1),
+                           rh.reshape(T, -1)], axis=1)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -200,9 +226,14 @@ def augment(x):
     xy *= (1.0 + np.random.uniform(-AUG_SCALE, AUG_SCALE))
     xy += np.random.normal(0, AUG_JITTER, xy.shape).astype(np.float32)
     x[..., :2] = xy
-    # horizontal mirror (also swaps hands -> handled by flipping x)
+    # horizontal mirror: flip x AND swap L/R identity (pose pairs + the two hands)
     if np.random.rand() < AUG_MIRROR_PROB:
         x[..., 0] = -x[..., 0]
+        for a, b in POSE_PAIRS:
+            x[:, [a, b]] = x[:, [b, a]]
+        lh = x[:, LH].copy()
+        x[:, LH] = x[:, RH]
+        x[:, RH] = lh
     # frame dropout
     if AUG_FRAME_DROPOUT > 0 and len(x) > 8:
         keep = np.random.rand(len(x)) > AUG_FRAME_DROPOUT
@@ -239,14 +270,14 @@ class PoseDataset(Dataset):
 
     def __getitem__(self, i):
         path, gl = self.rows[i]
-        x = load_pose(path)                 # (T, P, 2)
+        x = load_pose(path)                 # (T, P, 2) raw
         if self.train:
             x = augment(x)
-        x = x.reshape(len(x), -1)           # (T, P*2)
+        x = build_features(x)               # (T, F) part-aware normalized
         if USE_VELOCITY:
             vel = np.zeros_like(x)
             vel[1:] = x[1:] - x[:-1]        # motion between consecutive frames
-            x = np.concatenate([x, vel], axis=1)   # (T, P*2 * 2)
+            x = np.concatenate([x, vel], axis=1)
         return torch.from_numpy(x).float(), torch.tensor(gl, dtype=torch.long)
 
 
@@ -396,8 +427,8 @@ def main():
     test_rows = read_split(SPLIT, "test")
     print(f"[{SPLIT}] train={len(train_rows)} dev={len(dev_rows)} test={len(test_rows)}")
 
-    # infer per-frame feature dim from one sample: (T, P, C) -> P*C (x2 if velocity)
-    in_dim = int(np.prod(load_pose(train_rows[0][0]).shape[1:]))
+    # infer per-frame feature dim by building features on one real sample
+    in_dim = build_features(load_pose(train_rows[0][0])).shape[1]
     if USE_VELOCITY:
         in_dim *= 2
     print("feature dim:", in_dim)
