@@ -33,6 +33,7 @@ SPLIT = "SI"          # "SI" = unseen signers (seen sentences), "US" = unseen se
 USE_FACE = False      # face landmarks are mostly noise for signing
 DROP_Z = True         # MediaPipe z from a single camera is unreliable
 CONF_THRESHOLD = 0.1
+USE_OUTLIER_FILTER = True   # remove MediaPipe spike glitches before gap-filling
 FRAME_STRIDE = 1      # keep full temporal resolution (finer CTC alignment)
 MAX_FRAMES = 384      # cap (after striding)
 
@@ -169,8 +170,31 @@ def load_pose(path):
         data = data[::FRAME_STRIDE]
     if len(data) > MAX_FRAMES:
         data = data[:MAX_FRAMES]
-    data = fill_missing(data)                 # interpolate MediaPipe gaps across time
+    if USE_OUTLIER_FILTER:
+        data = remove_outliers(data)          # drop MediaPipe spike glitches
+    data = fill_missing(data)                 # interpolate gaps (incl. removed spikes)
     return data.astype(np.float32)            # raw kept points; normalized later
+
+
+def remove_outliers(data, win=7, k=5.0):
+    """Hampel-style temporal outlier removal: a keypoint that deviates far from
+    its local temporal median (a MediaPipe spike) is zeroed -> later interpolated.
+    Vectorized over all points/coords for speed."""
+    from numpy.lib.stride_tricks import sliding_window_view
+    Tn, P, C = data.shape
+    if Tn < win:
+        return data
+    flat = data.reshape(Tn, P * C)
+    present = (np.abs(data[..., 0]) + np.abs(data[..., 1])) > 0   # (T, P)
+    pad = win // 2
+    padded = np.pad(flat, ((pad, pad), (0, 0)), mode="edge")
+    sw = sliding_window_view(padded, win, axis=0)                 # (T, P*C, win)
+    med = np.median(sw, axis=-1)                                  # (T, P*C)
+    mad = np.median(np.abs(sw - med[..., None]), axis=-1) + 1e-6
+    spike = (np.abs(flat - med) > k * mad).reshape(Tn, P, C).any(-1) & present
+    out = data.copy()
+    out[spike] = 0.0
+    return out
 
 
 def fill_missing(data):
