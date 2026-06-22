@@ -37,20 +37,21 @@ FRAME_STRIDE = 1      # keep full temporal resolution (finer CTC alignment)
 MAX_FRAMES = 384      # cap (after striding)
 
 # ── Conformer encoder (CNN+Transformer hybrid, the CSLRConformer recipe) ──
-D_MODEL = 384
-N_HEAD = 6
+# Matches CSLRConformer's published dims: d_model 512, ~492 input features.
+D_MODEL = 512
+N_HEAD = 8
 N_LAYERS = 6
-FFN_DIM = 1536        # macaron FFN (expansion ~4)
+FFN_DIM = 2048        # macaron FFN (expansion ~4)
 CONV_KERNEL = 31      # Conformer depthwise conv kernel
-DROPOUT = 0.3
+DROPOUT = 0.2
 USE_VELOCITY = True   # append frame-to-frame motion (big win for sign language)
 
-BATCH_SIZE = 16
-LR = 3e-4
-WEIGHT_DECAY = 1e-2   # train loss ~0.06 -> lots of room to regularize hard
-WARMUP_EPOCHS = 3
-MAX_EPOCHS = 200
-EARLY_STOP_PATIENCE = 20
+BATCH_SIZE = 16       # if CUDA OOM on free Kaggle, drop to 8
+LR = 1e-4             # their default
+WEIGHT_DECAY = 1e-2
+WARMUP_EPOCHS = 5
+MAX_EPOCHS = 250
+EARLY_STOP_PATIENCE = 25
 GRAD_CLIP = 1.0
 NUM_WORKERS = 2
 SEED = 1337
