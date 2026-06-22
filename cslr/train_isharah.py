@@ -36,12 +36,13 @@ CONF_THRESHOLD = 0.1
 FRAME_STRIDE = 1      # keep full temporal resolution (finer CTC alignment)
 MAX_FRAMES = 384      # cap (after striding)
 
-# ── Transformer encoder (capable but regularized, not just "big") ──
+# ── Conformer encoder (CNN+Transformer hybrid, the CSLRConformer recipe) ──
 D_MODEL = 256
 N_HEAD = 4
-N_LAYERS = 4
-FFN_DIM = 512
-DROPOUT = 0.3
+N_LAYERS = 6
+FFN_DIM = 1024        # macaron FFN (expansion ~4)
+CONV_KERNEL = 31      # Conformer depthwise conv kernel
+DROPOUT = 0.15
 USE_VELOCITY = True   # append frame-to-frame motion (big win for sign language)
 
 BATCH_SIZE = 16
@@ -330,8 +331,62 @@ class PositionalEncoding(nn.Module):
         return x + self.pe[:, :x.size(1)]
 
 
+class FeedForward(nn.Module):
+    def __init__(self, d, ffn, drop):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.LayerNorm(d), nn.Linear(d, ffn), nn.SiLU(), nn.Dropout(drop),
+            nn.Linear(ffn, d), nn.Dropout(drop))
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class ConvModule(nn.Module):
+    """Conformer convolution module (captures local sign dynamics)."""
+
+    def __init__(self, d, kernel, drop):
+        super().__init__()
+        self.ln = nn.LayerNorm(d)
+        self.pw1 = nn.Conv1d(d, 2 * d, 1)          # -> GLU
+        self.dw = nn.Conv1d(d, d, kernel, padding=kernel // 2, groups=d)
+        self.bn = nn.BatchNorm1d(d)
+        self.pw2 = nn.Conv1d(d, d, 1)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x, pad_mask):             # x: (B, T, D), pad_mask: (B, T) True=pad
+        x = self.ln(x).transpose(1, 2)          # (B, D, T)
+        x = x.masked_fill(pad_mask.unsqueeze(1), 0.0)   # don't leak across padding
+        x = nn.functional.glu(self.pw1(x), dim=1)
+        x = x.masked_fill(pad_mask.unsqueeze(1), 0.0)
+        x = self.dw(x)
+        x = nn.functional.silu(self.bn(x))
+        x = self.pw2(x).transpose(1, 2)         # (B, T, D)
+        return self.drop(x)
+
+
+class ConformerBlock(nn.Module):
+    def __init__(self, d, heads, ffn, kernel, drop):
+        super().__init__()
+        self.ff1 = FeedForward(d, ffn, drop)
+        self.ln_attn = nn.LayerNorm(d)
+        self.attn = nn.MultiheadAttention(d, heads, dropout=drop, batch_first=True)
+        self.conv = ConvModule(d, kernel, drop)
+        self.ff2 = FeedForward(d, ffn, drop)
+        self.ln_out = nn.LayerNorm(d)
+
+    def forward(self, x, pad_mask):
+        x = x + 0.5 * self.ff1(x)
+        a = self.ln_attn(x)
+        a, _ = self.attn(a, a, a, key_padding_mask=pad_mask, need_weights=False)
+        x = x + a
+        x = x + self.conv(x, pad_mask)
+        x = x + 0.5 * self.ff2(x)
+        return self.ln_out(x)
+
+
 class CSLRNet(nn.Module):
-    """Conv front-end (downsample x4) -> Transformer encoder -> CTC head."""
+    """Conv front-end (downsample x4) -> Conformer encoder -> CTC head."""
 
     def __init__(self, in_dim, n_classes):
         super().__init__()
@@ -341,10 +396,9 @@ class CSLRNet(nn.Module):
         self.conv2 = SepConv1d(D_MODEL, D_MODEL, stride=2)
         self.pos = PositionalEncoding(D_MODEL)
         self.in_drop = nn.Dropout(DROPOUT)
-        layer = nn.TransformerEncoderLayer(
-            d_model=D_MODEL, nhead=N_HEAD, dim_feedforward=FFN_DIM,
-            dropout=DROPOUT, batch_first=True, activation="gelu", norm_first=True)
-        self.encoder = nn.TransformerEncoder(layer, num_layers=N_LAYERS)
+        self.blocks = nn.ModuleList([
+            ConformerBlock(D_MODEL, N_HEAD, FFN_DIM, CONV_KERNEL, DROPOUT)
+            for _ in range(N_LAYERS)])
         self.head = nn.Linear(D_MODEL, n_classes)
 
     def forward(self, x, lens):             # x: (B, T, F), lens: raw input lengths
@@ -355,11 +409,11 @@ class CSLRNet(nn.Module):
         x = self.conv2(x)                   # downsample x4
         x = x.transpose(1, 2)               # (B, T', D)
         x = self.in_drop(self.pos(x))
-        # padding mask: True where padded (so attention ignores it)
         out_lens = torch.tensor([out_len(int(l)) for l in lens], device=x.device)
         Tp = x.size(1)
         pad_mask = torch.arange(Tp, device=x.device)[None, :] >= out_lens[:, None]
-        x = self.encoder(x, src_key_padding_mask=pad_mask)
+        for blk in self.blocks:
+            x = blk(x, pad_mask)
         x = self.head(x)                    # (B, T', n_classes)
         return x.log_softmax(-1)
 
