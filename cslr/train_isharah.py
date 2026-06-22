@@ -37,10 +37,10 @@ FRAME_STRIDE = 1      # keep full temporal resolution (finer CTC alignment)
 MAX_FRAMES = 384      # cap (after striding)
 
 # ── Conformer encoder (CNN+Transformer hybrid, the CSLRConformer recipe) ──
-D_MODEL = 256
-N_HEAD = 4
+D_MODEL = 384
+N_HEAD = 6
 N_LAYERS = 6
-FFN_DIM = 1024        # macaron FFN (expansion ~4)
+FFN_DIM = 1536        # macaron FFN (expansion ~4)
 CONV_KERNEL = 31      # Conformer depthwise conv kernel
 DROPOUT = 0.3
 USE_VELOCITY = True   # append frame-to-frame motion (big win for sign language)
@@ -168,7 +168,25 @@ def load_pose(path):
         data = data[::FRAME_STRIDE]
     if len(data) > MAX_FRAMES:
         data = data[:MAX_FRAMES]
+    data = fill_missing(data)                 # interpolate MediaPipe gaps across time
     return data.astype(np.float32)            # raw kept points; normalized later
+
+
+def fill_missing(data):
+    """Linearly interpolate missing keypoints (x==y==0) across time, per point.
+    MediaPipe frequently drops hands -> zeros; gap-filling restores continuity."""
+    T, P, C = data.shape
+    out = data.copy()
+    missing = (np.abs(data[..., 0]) + np.abs(data[..., 1])) == 0   # (T, P)
+    t = np.arange(T)
+    for p in range(P):
+        m = missing[:, p]
+        valid = ~m
+        if valid.sum() < 2 or m.sum() == 0:
+            continue
+        for c in range(C):
+            out[m, p, c] = np.interp(t[m], t[valid], data[valid, p, c])
+    return out
 
 
 # kept-array layout (face dropped): pose[0:33], left_hand[33:54], right_hand[54:75]
