@@ -188,7 +188,7 @@ def _norm_hand(hand):
     out = out / span[:, None, None]
     present = np.abs(hand).sum((1, 2)) > 0
     out[~present] = 0.0
-    return out
+    return np.clip(out, -5.0, 5.0)          # guard against tiny-span blowups
 
 
 def build_features(x):
@@ -335,6 +335,7 @@ class CSLRNet(nn.Module):
 
     def __init__(self, in_dim, n_classes):
         super().__init__()
+        self.in_norm = nn.LayerNorm(in_dim)
         self.proj = nn.Linear(in_dim, D_MODEL)
         self.conv1 = SepConv1d(D_MODEL, D_MODEL, stride=2)
         self.conv2 = SepConv1d(D_MODEL, D_MODEL, stride=2)
@@ -347,6 +348,7 @@ class CSLRNet(nn.Module):
         self.head = nn.Linear(D_MODEL, n_classes)
 
     def forward(self, x, lens):             # x: (B, T, F), lens: raw input lengths
+        x = self.in_norm(x)                 # put all feature groups on one scale
         x = self.proj(x)                    # (B, T, D)
         x = x.transpose(1, 2)               # (B, D, T)
         x = self.conv1(x)
