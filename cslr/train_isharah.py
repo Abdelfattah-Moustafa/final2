@@ -29,7 +29,7 @@ from torch.utils.data import Dataset, DataLoader
 # ──────────────────────────────────────────────────────────────────────────
 # CONFIG
 # ──────────────────────────────────────────────────────────────────────────
-SPLIT = "US"          # "US" = unseen sentences (composition test), "SI" = unseen signers
+SPLIT = "SI"          # "SI" = unseen signers (seen sentences), "US" = unseen sentences
 USE_FACE = False      # face landmarks are mostly noise for signing
 DROP_Z = True         # MediaPipe z from a single camera is unreliable
 CONF_THRESHOLD = 0.1
@@ -494,6 +494,8 @@ def main():
     print(f"\n=== {SPLIT} best dev WER {best_wer:.3f} | TEST WER {test_wer:.3f} ===")
     if SPLIT == "US":
         print("US test = unseen sentences -> this WER measures real gloss composition.")
+    else:
+        print("SI test = unseen signers (seen sentences) -> signer-generalization WER.")
 
 
 if __name__ == "__main__":
