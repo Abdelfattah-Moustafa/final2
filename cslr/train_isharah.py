@@ -1,16 +1,16 @@
 """
-Small, low-overfit CSLR model for Isharah-1000-pose (CTC).
+CSLR model for Isharah-1000-pose (CTC) — aligned to the Signer-Invariant Conformer
+recipe (Haque et al., MSLR 2025), which reaches 7.31/13.07 dev/test WER on SI.
 
-Designed to run as-is in a free Kaggle notebook with the dataset attached.
-- Drops face landmarks + z  -> 75 points x (x,y) = 150 features/frame
-- Torso-centered, shoulder-width-normalized keypoints
-- Small depthwise-separable temporal CNN + BiGRU + CTC head (~1-2M params)
-- Strong temporal/spatial augmentation as the main regularizer
-- Trains on the official US (Unseen-Sentences) split, so the test set is made of
-  gloss combinations never seen in training -> measures real composition, not
-  template memorization. Also evaluates the SI (Signer-Independent) test.
+Key choices matching the paper (so we can target sub-20% WER):
+- 86 keypoints: 25 body + 21 left hand + 21 right hand + 19 lips (x,y) -> 172 dims
+- torso bounding-box normalization; missing keypoints linearly interpolated
+- 4-conv temporal encoder (x4 downsample) -> Conformer blocks -> CTC head
+- dropout 0.1, AdamW lr 1e-4, cosine annealing, batch 16
+- RESUME-from-checkpoint so long training survives Kaggle's session limit
 
-Edit SPLIT below ("US" or "SI") and run.
+Run repeatedly: it auto-resumes from cslr_ckpt.pt each session until you reach
+enough epochs. Save cslr_ckpt.pt to a Kaggle Dataset to persist across wipes.
 """
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ import glob
 import json
 import random
 import math
-from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -29,77 +28,66 @@ from torch.utils.data import Dataset, DataLoader
 # ──────────────────────────────────────────────────────────────────────────
 # CONFIG
 # ──────────────────────────────────────────────────────────────────────────
-SPLIT = "SI"          # "SI" = unseen signers (seen sentences), "US" = unseen sentences
-USE_FACE = False      # face landmarks are mostly noise for signing
-DROP_Z = True         # MediaPipe z from a single camera is unreliable
+SPLIT = "SI"          # "SI" = unseen signers (paper's 13% task), "US" = unseen sentences
 CONF_THRESHOLD = 0.1
-USE_OUTLIER_FILTER = True   # remove MediaPipe spike glitches before gap-filling
-FRAME_STRIDE = 1      # keep full temporal resolution (finer CTC alignment)
-MAX_FRAMES = 384      # cap (after striding)
+USE_OUTLIER_FILTER = True
+MAX_FRAMES = 512      # paper caps sequences at 512
 
-# ── Conformer encoder (CNN+Transformer hybrid, the CSLRConformer recipe) ──
-# Matches CSLRConformer's published dims: d_model 512, ~492 input features.
+# Conformer (paper-aligned)
 D_MODEL = 512
 N_HEAD = 8
 N_LAYERS = 6
-FFN_DIM = 2048        # macaron FFN (expansion ~4)
-CONV_KERNEL = 31      # Conformer depthwise conv kernel
-DROPOUT = 0.2
-USE_VELOCITY = True   # append frame-to-frame motion (big win for sign language)
+FFN_DIM = 2048
+CONV_KERNEL = 31
+DROPOUT = 0.1
 
-BATCH_SIZE = 16       # if CUDA OOM on free Kaggle, drop to 8
-LR = 1e-4             # their default
+BATCH_SIZE = 16
+LR = 1e-4
 WEIGHT_DECAY = 1e-2
-WARMUP_EPOCHS = 5
-MAX_EPOCHS = 250
-EARLY_STOP_PATIENCE = 25
+WARMUP_EPOCHS = 4
+MAX_EPOCHS = 300      # cosine horizon; train across sessions toward this
+EARLY_STOP_PATIENCE = 60   # high: long training is expected
 GRAD_CLIP = 1.0
-EMA_DECAY = 0.999     # exponential moving average of weights (eval + saved model)
 NUM_WORKERS = 2
 SEED = 1337
 
-# augmentation (train only) — HEAVY: model memorized training signers (train loss
-# ~0.06, dev 0.41). Strong spatial aug simulates different signers -> closes the gap.
-AUG_ROTATE_DEG = 16.0
-AUG_SCALE = 0.18
-AUG_JITTER = 0.03
-AUG_FRAME_DROPOUT = 0.15
-AUG_TIME_WARP = 0.20
+# augmentation (train only) — moderate; paper used coordinate noise + standard aug
+AUG_ROTATE_DEG = 13.0
+AUG_SCALE = 0.10
+AUG_JITTER = 0.02
+AUG_FRAME_DROPOUT = 0.10
+AUG_TIME_WARP = 0.15
 AUG_MIRROR_PROB = 0.5
-AUG_TIME_MASK_N = 2       # SpecAugment-style temporal masks
-AUG_TIME_MASK_MAX = 16    # max length (frames) of each temporal mask
-AUG_JOINT_DROPOUT = 0.12  # randomly zero whole keypoints for the clip
+AUG_TIME_MASK_N = 1
+AUG_TIME_MASK_MAX = 12
+
+CKPT = "cslr_ckpt.pt"     # full training state (for resume)
+BEST = "cslr_best.pt"     # best model weights only
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
+random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# LOCATE DATASET FILES (auto-discover under /kaggle/input)
+# DATASET FILES
 # ──────────────────────────────────────────────────────────────────────────
 def find_base():
-    cands = glob.glob("/kaggle/input/**/gloss_vocabulary.json", recursive=True)
-    if not cands:
-        cands = glob.glob("**/gloss_vocabulary.json", recursive=True)
-    assert cands, "Could not find gloss_vocabulary.json under /kaggle/input"
-    return os.path.dirname(cands[0])
+    c = glob.glob("/kaggle/input/**/gloss_vocabulary.json", recursive=True)
+    if not c:
+        c = glob.glob("**/gloss_vocabulary.json", recursive=True)
+    assert c, "Could not find gloss_vocabulary.json"
+    return os.path.dirname(c[0])
 
 
 BASE = find_base()
 print("dataset base:", BASE)
-
 VOCAB = json.load(open(os.path.join(BASE, "gloss_vocabulary.json")))
 GLOSS2IDX = VOCAB["gloss_to_index"]
 IDX2GLOSS = {int(k): v for k, v in VOCAB["index_to_gloss"].items()}
-VOCAB_SIZE = VOCAB["vocabulary_size"]          # 685
-BLANK = VOCAB_SIZE                              # CTC blank = last index
+VOCAB_SIZE = VOCAB["vocabulary_size"]      # 685
+BLANK = VOCAB_SIZE
 NUM_CLASSES = VOCAB_SIZE + 1
 print("vocab size:", VOCAB_SIZE)
-
-# map every .pose basename -> absolute path
 POSE_PATHS = {os.path.basename(p): p for p in glob.glob("/kaggle/input/**/*.pose", recursive=True)}
 print("pose files found:", len(POSE_PATHS))
 
@@ -107,107 +95,101 @@ print("pose files found:", len(POSE_PATHS))
 def read_split(split, part):
     path = os.path.join(BASE, "splits", split, f"{part}.txt")
     rows = []
-    with open(path, encoding="utf-8") as f:
-        lines = f.read().splitlines()
-    for line in lines[1:]:                      # skip header
+    for line in open(path, encoding="utf-8").read().splitlines()[1:]:
         if not line.strip():
             continue
         cols = line.split("|")
-        pose_ref, gloss = cols[0], cols[1]
-        base = os.path.basename(pose_ref)
+        base = os.path.basename(cols[0])
         if base not in POSE_PATHS:
             continue
-        gl = [GLOSS2IDX[g] for g in gloss.split() if g in GLOSS2IDX]
+        gl = [GLOSS2IDX[g] for g in cols[1].split() if g in GLOSS2IDX]
         if gl:
             rows.append((POSE_PATHS[base], gl))
     return rows
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# POSE LOADING + NORMALIZATION
+# 86-KEYPOINT SELECTION  (25 body + 21 LH + 21 RH + 19 lips)
 # ──────────────────────────────────────────────────────────────────────────
 from pose_format import Pose
 
-# component point counts, in file order
-_KEEP = {"POSE_LANDMARKS", "LEFT_HAND_LANDMARKS", "RIGHT_HAND_LANDMARKS"}
-_keep_idx_cache = {}
+# MediaPipe Face Mesh outer-lip indices (19)
+LIP_INDICES = [0, 17, 37, 39, 40, 61, 84, 91, 146, 181, 185,
+               267, 269, 270, 291, 314, 321, 375, 405]
+_keep_cache = {}
+
+# layout in the assembled 86 array
+BODY = slice(0, 25); LHAND = slice(25, 46); RHAND = slice(46, 67); LIPS = slice(67, 86)
+# torso landmarks (within body 0..24 == MediaPipe pose indices): shoulders 11,12 hips 23,24
+TORSO = [11, 12, 23, 24]
+# symmetric L/R pose pairs within body (for correct mirror)
+BODY_PAIRS = [(1, 4), (2, 5), (3, 6), (7, 8), (9, 10), (11, 12), (13, 14),
+              (15, 16), (17, 18), (19, 20), (21, 22), (23, 24)]
 
 
 def _keep_indices(p):
-    """Indices into the 543-point axis for the components we keep (drop face)."""
     key = tuple((c.name, len(c.points)) for c in p.header.components)
-    if key in _keep_idx_cache:
-        return _keep_idx_cache[key]
-    idx, off = [], 0
+    if key in _keep_cache:
+        return _keep_cache[key]
+    off = {}
+    o = 0
     for c in p.header.components:
-        n = len(c.points)
-        if (c.name in _KEEP) or (USE_FACE and c.name == "FACE_LANDMARKS"):
-            idx.extend(range(off, off + n))
-        off += n
+        off[c.name] = o
+        o += len(c.points)
+    idx = []
+    idx += [off["POSE_LANDMARKS"] + i for i in range(25)]          # 25 body
+    idx += [off["LEFT_HAND_LANDMARKS"] + i for i in range(21)]     # 21 LH
+    idx += [off["RIGHT_HAND_LANDMARKS"] + i for i in range(21)]    # 21 RH
+    idx += [off["FACE_LANDMARKS"] + i for i in LIP_INDICES]        # 19 lips
     idx = np.array(idx, dtype=np.int64)
-    _keep_idx_cache[key] = idx
+    _keep_cache[key] = idx
     return idx
 
 
 def load_pose(path):
-    """Return (T, P, C) float32 array of normalized keypoints."""
-    with open(path, "rb") as f:
-        p = Pose.read(f.read())
-    data = np.asarray(p.body.data)          # (T, people, 543, 3), maybe masked
-    conf = np.asarray(p.body.confidence)    # (T, people, 543)
+    p = Pose.read(open(path, "rb").read())
+    data = np.asarray(p.body.data)
+    conf = np.asarray(p.body.confidence)
     if data.ndim == 4:
-        data = data[:, 0]                   # first person -> (T, 543, 3)
-        conf = conf[:, 0]
+        data = data[:, 0]; conf = conf[:, 0]
     data = np.nan_to_num(data.astype(np.float32))
     keep = _keep_indices(p)
-    data = data[:, keep, :]                 # (T, P, 3)
+    data = data[:, keep, :]
     conf = conf[:, keep]
-    # zero out low-confidence points
     data[conf < CONF_THRESHOLD] = 0.0
-    if DROP_Z:
-        data = data[..., :2]                # (T, P, 2)
-    # temporal subsample
-    if FRAME_STRIDE > 1:
-        data = data[::FRAME_STRIDE]
+    data = data[..., :2]                       # (T, 86, 2)
     if len(data) > MAX_FRAMES:
         data = data[:MAX_FRAMES]
     if USE_OUTLIER_FILTER:
-        data = remove_outliers(data)          # drop MediaPipe spike glitches
-    data = fill_missing(data)                 # interpolate gaps (incl. removed spikes)
-    return data.astype(np.float32)            # raw kept points; normalized later
+        data = remove_outliers(data)
+    data = fill_missing(data)
+    return data.astype(np.float32)
 
 
 def remove_outliers(data, win=7, k=5.0):
-    """Hampel-style temporal outlier removal: a keypoint that deviates far from
-    its local temporal median (a MediaPipe spike) is zeroed -> later interpolated.
-    Vectorized over all points/coords for speed."""
     from numpy.lib.stride_tricks import sliding_window_view
     Tn, P, C = data.shape
     if Tn < win:
         return data
     flat = data.reshape(Tn, P * C)
-    present = (np.abs(data[..., 0]) + np.abs(data[..., 1])) > 0   # (T, P)
+    present = (np.abs(data[..., 0]) + np.abs(data[..., 1])) > 0
     pad = win // 2
     padded = np.pad(flat, ((pad, pad), (0, 0)), mode="edge")
-    sw = sliding_window_view(padded, win, axis=0)                 # (T, P*C, win)
-    med = np.median(sw, axis=-1)                                  # (T, P*C)
+    sw = sliding_window_view(padded, win, axis=0)
+    med = np.median(sw, axis=-1)
     mad = np.median(np.abs(sw - med[..., None]), axis=-1) + 1e-6
     spike = (np.abs(flat - med) > k * mad).reshape(Tn, P, C).any(-1) & present
-    out = data.copy()
-    out[spike] = 0.0
+    out = data.copy(); out[spike] = 0.0
     return out
 
 
 def fill_missing(data):
-    """Linearly interpolate missing keypoints (x==y==0) across time, per point.
-    MediaPipe frequently drops hands -> zeros; gap-filling restores continuity."""
     T, P, C = data.shape
     out = data.copy()
-    missing = (np.abs(data[..., 0]) + np.abs(data[..., 1])) == 0   # (T, P)
+    missing = (np.abs(data[..., 0]) + np.abs(data[..., 1])) == 0
     t = np.arange(T)
     for p in range(P):
-        m = missing[:, p]
-        valid = ~m
+        m = missing[:, p]; valid = ~m
         if valid.sum() < 2 or m.sum() == 0:
             continue
         for c in range(C):
@@ -215,199 +197,130 @@ def fill_missing(data):
     return out
 
 
-# kept-array layout (face dropped): pose[0:33], left_hand[33:54], right_hand[54:75]
-POSE, LH, RH = slice(0, 33), slice(33, 54), slice(54, 75)
-# MediaPipe pose symmetric L/R landmark pairs (for correct horizontal mirror)
-POSE_PAIRS = [(1, 4), (2, 5), (3, 6), (7, 8), (9, 10), (11, 12), (13, 14),
-              (15, 16), (17, 18), (19, 20), (21, 22), (23, 24), (25, 26),
-              (27, 28), (29, 30), (31, 32)]
-
-
-def _norm_hand(hand):
-    """Local hand normalization: center on wrist, scale by hand span -> finger
-    articulation at full scale. hand: (T, 21, 2). Missing frames -> zeros."""
-    out = hand.copy()
-    wrist = hand[:, 0:1, :]
-    out = out - wrist                                    # wrist-relative
-    span = np.linalg.norm(hand[:, 9, :] - hand[:, 0, :], axis=-1)  # wrist->mid MCP
-    span = np.where(span > 1e-3, span, 1.0)
-    out = out / span[:, None, None]
-    present = np.abs(hand).sum((1, 2)) > 0
-    out[~present] = 0.0
-    return np.clip(out, -5.0, 5.0)          # guard against tiny-span blowups
-
-
 def build_features(x):
-    """x: (T, P, 2) raw -> (T, F) features.
-    body kept in body-space (preserves hand *location*); hands ALSO added in
-    local wrist-space (preserves finger *articulation*)."""
-    body = x.copy()
-    ls, rs = x[:, 11, :2], x[:, 12, :2]
-    valid = (np.abs(ls).sum(-1) > 0) & (np.abs(rs).sum(-1) > 0)
+    """Torso bounding-box normalization -> flattened (T, 172)."""
+    torso = x[:, TORSO, :2]                                  # (T, 4, 2)
+    valid = (np.abs(torso).sum(-1) > 0).all(-1)              # frames with full torso
+    out = x.copy()
     if valid.sum() > 0:
-        center = ((ls + rs) / 2.0)[valid].mean(0)
-        width = np.linalg.norm((ls - rs)[valid], axis=-1).mean()
-        width = width if width > 1e-3 else 1.0
-        body[..., :2] = (body[..., :2] - center) / width
-    lh = _norm_hand(x[:, LH, :2])
-    rh = _norm_hand(x[:, RH, :2])
-    T = len(x)
-    return np.concatenate([body.reshape(T, -1),
-                           lh.reshape(T, -1),
-                           rh.reshape(T, -1)], axis=1)
+        tv = torso[valid]
+        mn = tv.reshape(-1, 2).min(0); mx = tv.reshape(-1, 2).max(0)
+        center = (mn + mx) / 2.0
+        scale = np.linalg.norm(mx - mn)
+        scale = scale if scale > 1e-3 else 1.0
+        out[..., :2] = (out[..., :2] - center) / scale
+    return out.reshape(len(x), -1)                           # (T, 172)
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# AUGMENTATION (train only)
+# AUGMENTATION
 # ──────────────────────────────────────────────────────────────────────────
-def augment(x):
+def augment(x):                                              # x: (T, 86, 2)
     x = x.copy()
-    xy = x[..., :2]
-    # rotation about origin (already torso-centered)
     th = math.radians(np.random.uniform(-AUG_ROTATE_DEG, AUG_ROTATE_DEG))
     c, s = math.cos(th), math.sin(th)
     R = np.array([[c, -s], [s, c]], dtype=np.float32)
-    xy = xy @ R.T
-    # scale + jitter
+    xy = x[..., :2] @ R.T
     xy *= (1.0 + np.random.uniform(-AUG_SCALE, AUG_SCALE))
     xy += np.random.normal(0, AUG_JITTER, xy.shape).astype(np.float32)
     x[..., :2] = xy
-    # horizontal mirror: flip x AND swap L/R identity (pose pairs + the two hands)
     if np.random.rand() < AUG_MIRROR_PROB:
         x[..., 0] = -x[..., 0]
-        for a, b in POSE_PAIRS:
+        for a, b in BODY_PAIRS:
             x[:, [a, b]] = x[:, [b, a]]
-        lh = x[:, LH].copy()
-        x[:, LH] = x[:, RH]
-        x[:, RH] = lh
-    # frame dropout
+        lh = x[:, LHAND].copy(); x[:, LHAND] = x[:, RHAND]; x[:, RHAND] = lh
     if AUG_FRAME_DROPOUT > 0 and len(x) > 8:
         keep = np.random.rand(len(x)) > AUG_FRAME_DROPOUT
         if keep.sum() > 4:
             x = x[keep]
-    # time warp (resample to a slightly different length)
     if AUG_TIME_WARP > 0 and len(x) > 8:
-        factor = 1.0 + np.random.uniform(-AUG_TIME_WARP, AUG_TIME_WARP)
-        new_len = max(4, int(round(len(x) * factor)))
-        idx = np.clip(np.round(np.linspace(0, len(x) - 1, new_len)).astype(int), 0, len(x) - 1)
+        f = 1.0 + np.random.uniform(-AUG_TIME_WARP, AUG_TIME_WARP)
+        n = max(4, int(round(len(x) * f)))
+        idx = np.clip(np.round(np.linspace(0, len(x) - 1, n)).astype(int), 0, len(x) - 1)
         x = x[idx]
-    # SpecAugment-style temporal masking: zero short spans so the model can't
-    # lean on a memorized full-sequence pattern -> forces gloss-level features
     if AUG_TIME_MASK_N > 0 and len(x) > AUG_TIME_MASK_MAX * 2:
         for _ in range(AUG_TIME_MASK_N):
             w = np.random.randint(1, AUG_TIME_MASK_MAX + 1)
-            s = np.random.randint(0, len(x) - w)
-            x[s:s + w] = 0.0
-    # joint dropout: zero whole keypoints for the entire clip
-    if AUG_JOINT_DROPOUT > 0:
-        P = x.shape[1]
-        mask = np.random.rand(P) < AUG_JOINT_DROPOUT
-        x[:, mask, :] = 0.0
+            st = np.random.randint(0, len(x) - w)
+            x[st:st + w] = 0.0
     return x
 
 
 class PoseDataset(Dataset):
     def __init__(self, rows, train=False):
-        self.rows = rows
-        self.train = train
+        self.rows = rows; self.train = train
 
     def __len__(self):
         return len(self.rows)
 
     def __getitem__(self, i):
         path, gl = self.rows[i]
-        x = load_pose(path)                 # (T, P, 2) raw
+        x = load_pose(path)
         if self.train:
             x = augment(x)
-        x = build_features(x)               # (T, F) part-aware normalized
-        if USE_VELOCITY:
-            vel = np.zeros_like(x)
-            vel[1:] = x[1:] - x[:-1]        # motion between consecutive frames
-            x = np.concatenate([x, vel], axis=1)
+        x = build_features(x)
         return torch.from_numpy(x).float(), torch.tensor(gl, dtype=torch.long)
 
 
 def collate(batch):
     xs, ys = zip(*batch)
     lens = torch.tensor([len(x) for x in xs], dtype=torch.long)
-    T = int(lens.max())
-    F = xs[0].shape[1]
+    T = int(lens.max()); F = xs[0].shape[1]
     padded = torch.zeros(len(xs), T, F)
     for i, x in enumerate(xs):
         padded[i, :len(x)] = x
-    targets = torch.cat(ys)
-    target_lens = torch.tensor([len(y) for y in ys], dtype=torch.long)
-    return padded, lens, targets, target_lens
+    return padded, lens, torch.cat(ys), torch.tensor([len(y) for y in ys], dtype=torch.long)
 
 
 def out_len(L):
-    """Length after two stride-2 convs (kernel 3, pad 1): ceil(ceil(L/2)/2)."""
     L = (L + 1) // 2
     L = (L + 1) // 2
     return L
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# MODEL  (small on purpose)
+# MODEL: 4-conv temporal encoder -> Conformer -> CTC head
 # ──────────────────────────────────────────────────────────────────────────
-class SepConv1d(nn.Module):
-    def __init__(self, cin, cout, stride):
+class PositionalEncoding(nn.Module):
+    def __init__(self, d, max_len=4096):
         super().__init__()
-        self.dw = nn.Conv1d(cin, cin, 3, stride=stride, padding=1, groups=cin)
-        self.pw = nn.Conv1d(cin, cout, 1)
-        self.bn = nn.BatchNorm1d(cout)
-        self.act = nn.ReLU()
+        pe = torch.zeros(max_len, d)
+        pos = torch.arange(0, max_len).unsqueeze(1).float()
+        div = torch.exp(torch.arange(0, d, 2).float() * (-math.log(10000.0) / d))
+        pe[:, 0::2] = torch.sin(pos * div); pe[:, 1::2] = torch.cos(pos * div)
+        self.register_buffer("pe", pe.unsqueeze(0))
 
     def forward(self, x):
-        return self.act(self.bn(self.pw(self.dw(x))))
-
-
-class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_len=4096):
-        super().__init__()
-        pe = torch.zeros(max_len, d_model)
-        pos = torch.arange(0, max_len).unsqueeze(1).float()
-        div = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(pos * div)
-        pe[:, 1::2] = torch.cos(pos * div)
-        self.register_buffer("pe", pe.unsqueeze(0))   # (1, max_len, d_model)
-
-    def forward(self, x):                              # (B, T, d_model)
         return x + self.pe[:, :x.size(1)]
 
 
 class FeedForward(nn.Module):
     def __init__(self, d, ffn, drop):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.LayerNorm(d), nn.Linear(d, ffn), nn.SiLU(), nn.Dropout(drop),
-            nn.Linear(ffn, d), nn.Dropout(drop))
+        self.net = nn.Sequential(nn.LayerNorm(d), nn.Linear(d, ffn), nn.SiLU(),
+                                 nn.Dropout(drop), nn.Linear(ffn, d), nn.Dropout(drop))
 
     def forward(self, x):
         return self.net(x)
 
 
 class ConvModule(nn.Module):
-    """Conformer convolution module (captures local sign dynamics)."""
-
     def __init__(self, d, kernel, drop):
         super().__init__()
         self.ln = nn.LayerNorm(d)
-        self.pw1 = nn.Conv1d(d, 2 * d, 1)          # -> GLU
+        self.pw1 = nn.Conv1d(d, 2 * d, 1)
         self.dw = nn.Conv1d(d, d, kernel, padding=kernel // 2, groups=d)
         self.bn = nn.BatchNorm1d(d)
         self.pw2 = nn.Conv1d(d, d, 1)
         self.drop = nn.Dropout(drop)
 
-    def forward(self, x, pad_mask):             # x: (B, T, D), pad_mask: (B, T) True=pad
-        x = self.ln(x).transpose(1, 2)          # (B, D, T)
-        x = x.masked_fill(pad_mask.unsqueeze(1), 0.0)   # don't leak across padding
+    def forward(self, x, pad_mask):
+        x = self.ln(x).transpose(1, 2)
+        x = x.masked_fill(pad_mask.unsqueeze(1), 0.0)
         x = nn.functional.glu(self.pw1(x), dim=1)
         x = x.masked_fill(pad_mask.unsqueeze(1), 0.0)
-        x = self.dw(x)
-        x = nn.functional.silu(self.bn(x))
-        x = self.pw2(x).transpose(1, 2)         # (B, T, D)
-        return self.drop(x)
+        x = nn.functional.silu(self.bn(self.dw(x)))
+        return self.drop(self.pw2(x).transpose(1, 2))
 
 
 class ConformerBlock(nn.Module):
@@ -430,44 +343,44 @@ class ConformerBlock(nn.Module):
         return self.ln_out(x)
 
 
-class CSLRNet(nn.Module):
-    """Conv front-end (downsample x4) -> Conformer encoder -> CTC head."""
+def conv_block(cin, cout, stride):
+    return nn.Sequential(nn.Conv1d(cin, cout, 3, stride=stride, padding=1),
+                         nn.BatchNorm1d(cout), nn.ReLU())
 
+
+class CSLRNet(nn.Module):
     def __init__(self, in_dim, n_classes):
         super().__init__()
-        self.in_norm = nn.LayerNorm(in_dim)
-        self.proj = nn.Linear(in_dim, D_MODEL)
-        self.conv1 = SepConv1d(D_MODEL, D_MODEL, stride=2)
-        self.conv2 = SepConv1d(D_MODEL, D_MODEL, stride=2)
+        self.temporal = nn.Sequential(
+            conv_block(in_dim, D_MODEL, 1),
+            conv_block(D_MODEL, D_MODEL, 2),   # /2
+            conv_block(D_MODEL, D_MODEL, 1),
+            conv_block(D_MODEL, D_MODEL, 2),   # /4
+        )
         self.pos = PositionalEncoding(D_MODEL)
         self.in_drop = nn.Dropout(DROPOUT)
         self.blocks = nn.ModuleList([
             ConformerBlock(D_MODEL, N_HEAD, FFN_DIM, CONV_KERNEL, DROPOUT)
             for _ in range(N_LAYERS)])
-        self.head = nn.Linear(D_MODEL, n_classes)
+        self.head = nn.Sequential(nn.LayerNorm(D_MODEL), nn.Linear(D_MODEL, n_classes))
 
-    def forward(self, x, lens):             # x: (B, T, F), lens: raw input lengths
-        x = self.in_norm(x)                 # put all feature groups on one scale
-        x = self.proj(x)                    # (B, T, D)
-        x = x.transpose(1, 2)               # (B, D, T)
-        x = self.conv1(x)
-        x = self.conv2(x)                   # downsample x4
-        x = x.transpose(1, 2)               # (B, T', D)
+    def forward(self, x, lens):                 # x: (B, T, 172)
+        x = x.transpose(1, 2)                   # (B, 172, T)
+        x = self.temporal(x)                    # (B, D, T/4)
+        x = x.transpose(1, 2)                   # (B, T/4, D)
         x = self.in_drop(self.pos(x))
         out_lens = torch.tensor([out_len(int(l)) for l in lens], device=x.device)
         Tp = x.size(1)
         pad_mask = torch.arange(Tp, device=x.device)[None, :] >= out_lens[:, None]
         for blk in self.blocks:
             x = blk(x, pad_mask)
-        x = self.head(x)                    # (B, T', n_classes)
-        return x.log_softmax(-1)
+        return self.head(x).log_softmax(-1)
 
 
 # ──────────────────────────────────────────────────────────────────────────
 # DECODE + WER
 # ──────────────────────────────────────────────────────────────────────────
 def greedy_decode(log_probs):
-    """log_probs: (T, n_classes) -> list of gloss ids (collapse repeats, drop blank)."""
     ids = log_probs.argmax(-1).tolist()
     out, prev = [], None
     for i in ids:
@@ -478,14 +391,12 @@ def greedy_decode(log_probs):
 
 
 def wer(ref, hyp):
-    """edit distance / len(ref) over gloss-id sequences."""
     n, m = len(ref), len(hyp)
     if n == 0:
         return 0.0 if m == 0 else 1.0
     d = list(range(m + 1))
     for i in range(1, n + 1):
-        prev = d[0]
-        d[0] = i
+        prev = d[0]; d[0] = i
         for j in range(1, m + 1):
             cur = d[j]
             d[j] = min(d[j] + 1, d[j - 1] + 1, prev + (ref[i - 1] != hyp[j - 1]))
@@ -493,22 +404,16 @@ def wer(ref, hyp):
     return d[m] / n
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# TRAIN / EVAL
-# ──────────────────────────────────────────────────────────────────────────
 @torch.no_grad()
 def evaluate(model, loader):
     model.eval()
     tot_err, tot_len = 0.0, 0
     for padded, lens, targets, tlens in loader:
-        padded = padded.to(DEVICE)
-        logp = model(padded, lens).cpu()    # (B, T', C)
+        logp = model(padded.to(DEVICE), lens).cpu()
         out_lens = [out_len(int(l)) for l in lens]
-        off = 0
-        refs = []
+        off = 0; refs = []
         for tl in tlens:
-            refs.append(targets[off:off + tl].tolist())
-            off += int(tl)
+            refs.append(targets[off:off + tl].tolist()); off += int(tl)
         for b in range(len(refs)):
             hyp = greedy_decode(logp[b, :out_lens[b]])
             tot_err += wer(refs[b], hyp) * max(1, len(refs[b]))
@@ -517,8 +422,8 @@ def evaluate(model, loader):
 
 
 def make_loader(rows, train):
-    return DataLoader(PoseDataset(rows, train=train), batch_size=BATCH_SIZE,
-                      shuffle=train, num_workers=NUM_WORKERS, collate_fn=collate,
+    return DataLoader(PoseDataset(rows, train), batch_size=BATCH_SIZE, shuffle=train,
+                      num_workers=NUM_WORKERS, collate_fn=collate,
                       pin_memory=(DEVICE == "cuda"), drop_last=train)
 
 
@@ -528,85 +433,68 @@ def main():
     test_rows = read_split(SPLIT, "test")
     print(f"[{SPLIT}] train={len(train_rows)} dev={len(dev_rows)} test={len(test_rows)}")
 
-    # infer per-frame feature dim by building features on one real sample
     in_dim = build_features(load_pose(train_rows[0][0])).shape[1]
-    if USE_VELOCITY:
-        in_dim *= 2
     print("feature dim:", in_dim)
-
     model = CSLRNet(in_dim, NUM_CLASSES).to(DEVICE)
-    n_params = sum(p.numel() for p in model.parameters())
-    print(f"model params: {n_params/1e6:.2f}M")
+    print(f"model params: {sum(p.numel() for p in model.parameters())/1e6:.2f}M")
 
     ctc = nn.CTCLoss(blank=BLANK, zero_infinity=True)
-    opt = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=4)
+    opt = torch.optim.AdamW(model.parameters(), lr=LR, betas=(0.9, 0.98),
+                            weight_decay=WEIGHT_DECAY)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+        opt, T_max=max(1, MAX_EPOCHS - WARMUP_EPOCHS), eta_min=1e-6)
+
+    start_epoch, best_wer, bad = 1, 1e9, 0
+    if os.path.exists(CKPT):                     # RESUME
+        ck = torch.load(CKPT, map_location=DEVICE)
+        model.load_state_dict(ck["model"]); opt.load_state_dict(ck["opt"])
+        sched.load_state_dict(ck["sched"])
+        start_epoch = ck["epoch"] + 1; best_wer = ck["best_wer"]; bad = ck["bad"]
+        print(f"RESUMED from {CKPT} at epoch {start_epoch} (best WER {best_wer:.3f})")
 
     train_loader = make_loader(train_rows, True)
     dev_loader = make_loader(dev_rows, False)
     test_loader = make_loader(test_rows, False)
-
     print(f"device: {DEVICE} | steps/epoch: {len(train_loader)}")
-    # EMA (exponential moving average) of weights -> evaluated/saved instead of raw
-    ema = {k: v.detach().clone().float() for k, v in model.state_dict().items()}
-    best_wer, best_state, bad = 1e9, None, 0
-    for epoch in range(1, MAX_EPOCHS + 1):
-        # linear LR warmup for the first WARMUP_EPOCHS (stabilizes Transformer)
+
+    import time as _t
+    for epoch in range(start_epoch, MAX_EPOCHS + 1):
         if epoch <= WARMUP_EPOCHS:
             for g in opt.param_groups:
                 g["lr"] = LR * epoch / WARMUP_EPOCHS
-        model.train()
-        running = 0.0
-        import time as _t
-        _t0 = _t.time()
+        model.train(); running = 0.0; _t0 = _t.time()
         for step, (padded, lens, targets, tlens) in enumerate(train_loader):
             padded, targets = padded.to(DEVICE), targets.to(DEVICE)
-            logp = model(padded, lens)                # (B, T', C)
-            logp = logp.transpose(0, 1)               # (T', B, C) for CTC
+            logp = model(padded, lens).transpose(0, 1)
             in_lens = torch.tensor([out_len(int(l)) for l in lens], device=DEVICE)
             loss = ctc(logp, targets, in_lens, tlens.to(DEVICE))
-            opt.zero_grad()
-            loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
-            opt.step()
-            with torch.no_grad():                     # update EMA
-                for k, v in model.state_dict().items():
-                    if v.dtype.is_floating_point:
-                        ema[k].mul_(EMA_DECAY).add_(v.detach().float(), alpha=1 - EMA_DECAY)
-                    else:
-                        ema[k] = v.detach().clone()
+            opt.zero_grad(); loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP); opt.step()
             running += loss.item()
             if step % 50 == 0:
                 rate = (step + 1) / max(1e-6, _t.time() - _t0)
-                print(f"  e{epoch} step {step}/{len(train_loader)}  "
-                      f"loss {loss.item():.3f}  {rate:.1f} it/s", flush=True)
-        # evaluate the EMA weights (swap in, eval, restore raw weights for training)
-        raw = {k: v.detach().clone() for k, v in model.state_dict().items()}
-        model.load_state_dict(ema)
-        dev_wer = evaluate(model, dev_loader)
+                print(f"  e{epoch} step {step}/{len(train_loader)} loss {loss.item():.3f} "
+                      f"{rate:.1f} it/s", flush=True)
         if epoch > WARMUP_EPOCHS:
-            sched.step(dev_wer)
-        print(f"epoch {epoch:3d}  loss {running/len(train_loader):.3f}  dev_WER {dev_wer:.3f}")
+            sched.step()
+        dev_wer = evaluate(model, dev_loader)
+        print(f"epoch {epoch:3d}  loss {running/len(train_loader):.3f}  dev_WER {dev_wer:.3f}  "
+              f"lr {opt.param_groups[0]['lr']:.2e}", flush=True)
 
         if dev_wer < best_wer - 1e-4:
             best_wer, bad = dev_wer, 0
-            best_state = {k: v.cpu().clone() for k, v in ema.items()}
-            torch.save(best_state, "cslr_best.pt")
+            torch.save(model.state_dict(), BEST)
         else:
             bad += 1
-        model.load_state_dict(raw)                    # restore for continued training
+        torch.save({"epoch": epoch, "model": model.state_dict(), "opt": opt.state_dict(),
+                    "sched": sched.state_dict(), "best_wer": best_wer, "bad": bad}, CKPT)
         if bad >= EARLY_STOP_PATIENCE:
-            print("early stopping.")
-            break
+            print("early stopping."); break
 
-    if best_state:
-        model.load_state_dict(best_state)
+    if os.path.exists(BEST):
+        model.load_state_dict(torch.load(BEST, map_location=DEVICE))
     test_wer = evaluate(model, test_loader)
     print(f"\n=== {SPLIT} best dev WER {best_wer:.3f} | TEST WER {test_wer:.3f} ===")
-    if SPLIT == "US":
-        print("US test = unseen sentences -> this WER measures real gloss composition.")
-    else:
-        print("SI test = unseen signers (seen sentences) -> signer-generalization WER.")
 
 
 if __name__ == "__main__":

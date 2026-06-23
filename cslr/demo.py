@@ -15,17 +15,13 @@ import torch
 
 import train_isharah as T   # reuses the EXACT model + feature pipeline from training
 
-CKPT = "cslr_best.pt"
+CKPT = T.BEST
 OUT = "demo.mp4"
 
 
 def infer(path):
-    x = T.load_pose(path)                     # (T, P, 2) raw, gap-filled
-    feats = T.build_features(x)               # same normalization as training
-    if T.USE_VELOCITY:
-        vel = np.zeros_like(feats)
-        vel[1:] = feats[1:] - feats[:-1]
-        feats = np.concatenate([feats, vel], axis=1)
+    x = T.load_pose(path)                     # (T, 86, 2) raw, gap-filled
+    feats = T.build_features(x)               # (T, 172) torso-normalized
     xb = torch.from_numpy(feats).float().unsqueeze(0).to(T.DEVICE)
     lens = torch.tensor([len(feats)])
     with torch.no_grad():
@@ -66,8 +62,7 @@ def render_skeleton(path, out):
 
 if __name__ == "__main__":
     # build model with the same dims as training and load the checkpoint
-    sample_feats = T.build_features(T.load_pose(T.read_split(T.SPLIT, "test")[0][0]))
-    in_dim = sample_feats.shape[1] * (2 if T.USE_VELOCITY else 1)
+    in_dim = T.build_features(T.load_pose(T.read_split(T.SPLIT, "test")[0][0])).shape[1]
     model = T.CSLRNet(in_dim, T.NUM_CLASSES).to(T.DEVICE)
     model.load_state_dict(torch.load(CKPT, map_location=T.DEVICE))
     model.eval()
