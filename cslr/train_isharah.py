@@ -54,6 +54,7 @@ WARMUP_EPOCHS = 5
 MAX_EPOCHS = 250
 EARLY_STOP_PATIENCE = 25
 GRAD_CLIP = 1.0
+EMA_DECAY = 0.999     # exponential moving average of weights (eval + saved model)
 NUM_WORKERS = 2
 SEED = 1337
 
@@ -546,6 +547,8 @@ def main():
     test_loader = make_loader(test_rows, False)
 
     print(f"device: {DEVICE} | steps/epoch: {len(train_loader)}")
+    # EMA (exponential moving average) of weights -> evaluated/saved instead of raw
+    ema = {k: v.detach().clone().float() for k, v in model.state_dict().items()}
     best_wer, best_state, bad = 1e9, None, 0
     for epoch in range(1, MAX_EPOCHS + 1):
         # linear LR warmup for the first WARMUP_EPOCHS (stabilizes Transformer)
@@ -566,11 +569,20 @@ def main():
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
             opt.step()
+            with torch.no_grad():                     # update EMA
+                for k, v in model.state_dict().items():
+                    if v.dtype.is_floating_point:
+                        ema[k].mul_(EMA_DECAY).add_(v.detach().float(), alpha=1 - EMA_DECAY)
+                    else:
+                        ema[k] = v.detach().clone()
             running += loss.item()
             if step % 50 == 0:
                 rate = (step + 1) / max(1e-6, _t.time() - _t0)
                 print(f"  e{epoch} step {step}/{len(train_loader)}  "
                       f"loss {loss.item():.3f}  {rate:.1f} it/s", flush=True)
+        # evaluate the EMA weights (swap in, eval, restore raw weights for training)
+        raw = {k: v.detach().clone() for k, v in model.state_dict().items()}
+        model.load_state_dict(ema)
         dev_wer = evaluate(model, dev_loader)
         if epoch > WARMUP_EPOCHS:
             sched.step(dev_wer)
@@ -578,13 +590,14 @@ def main():
 
         if dev_wer < best_wer - 1e-4:
             best_wer, bad = dev_wer, 0
-            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            best_state = {k: v.cpu().clone() for k, v in ema.items()}
             torch.save(best_state, "cslr_best.pt")
         else:
             bad += 1
-            if bad >= EARLY_STOP_PATIENCE:
-                print("early stopping.")
-                break
+        model.load_state_dict(raw)                    # restore for continued training
+        if bad >= EARLY_STOP_PATIENCE:
+            print("early stopping.")
+            break
 
     if best_state:
         model.load_state_dict(best_state)
