@@ -39,28 +39,29 @@ N_HEAD = 8
 N_LAYERS = 6
 FFN_DIM = 2048
 CONV_KERNEL = 31
-DROPOUT = 0.2
+DROPOUT = 0.15
 
 BATCH_SIZE = 16
 LR = 1e-4
 WEIGHT_DECAY = 1e-2
-WARMUP_EPOCHS = 4
+WARMUP_EPOCHS = 4     # also re-used to ease back in on a warm-start from best
 MAX_EPOCHS = 300      # cosine horizon; train across sessions toward this
 EARLY_STOP_PATIENCE = 60   # high: long training is expected
 GRAD_CLIP = 1.0
 NUM_WORKERS = 2
 SEED = 1337
 
-# augmentation (train only) — strengthened to fight the overfitting plateau
-AUG_ROTATE_DEG = 16.0
-AUG_SCALE = 0.15
-AUG_JITTER = 0.03
-AUG_FRAME_DROPOUT = 0.15
-AUG_TIME_WARP = 0.20
+# augmentation (train only) — gently strengthened vs the original (not the
+# aggressive stack that destabilized the resume)
+AUG_ROTATE_DEG = 14.0
+AUG_SCALE = 0.12
+AUG_JITTER = 0.025
+AUG_FRAME_DROPOUT = 0.12
+AUG_TIME_WARP = 0.15
 AUG_MIRROR_PROB = 0.5
-AUG_TIME_MASK_N = 2
-AUG_TIME_MASK_MAX = 16
-AUG_JOINT_DROPOUT = 0.10
+AUG_TIME_MASK_N = 1
+AUG_TIME_MASK_MAX = 12
+AUG_JOINT_DROPOUT = 0.05
 
 CKPT = "cslr_ckpt.pt"     # full training state (for resume)
 BEST = "cslr_best.pt"     # best model weights only
@@ -448,18 +449,22 @@ def main():
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(
         opt, T_max=max(1, MAX_EPOCHS - WARMUP_EPOCHS), eta_min=1e-6)
 
+    train_loader = make_loader(train_rows, True)
+    dev_loader = make_loader(dev_rows, False)
+    test_loader = make_loader(test_rows, False)
+    print(f"device: {DEVICE} | steps/epoch: {len(train_loader)}")
+
     start_epoch, best_wer, bad = 1, 1e9, 0
-    if os.path.exists(CKPT):                     # RESUME
+    if os.path.exists(CKPT):                      # full resume (model+opt+sched)
         ck = torch.load(CKPT, map_location=DEVICE)
         model.load_state_dict(ck["model"]); opt.load_state_dict(ck["opt"])
         sched.load_state_dict(ck["sched"])
         start_epoch = ck["epoch"] + 1; best_wer = ck["best_wer"]; bad = ck["bad"]
         print(f"RESUMED from {CKPT} at epoch {start_epoch} (best WER {best_wer:.3f})")
-
-    train_loader = make_loader(train_rows, True)
-    dev_loader = make_loader(dev_rows, False)
-    test_loader = make_loader(test_rows, False)
-    print(f"device: {DEVICE} | steps/epoch: {len(train_loader)}")
+    elif os.path.exists(BEST):                    # warm-start from best weights only
+        model.load_state_dict(torch.load(BEST, map_location=DEVICE))
+        best_wer = evaluate(model, dev_loader)    # lock best so we can't overwrite it worse
+        print(f"WARM-START from {BEST}: dev WER {best_wer:.3f}, fresh optimizer + warmup")
 
     import time as _t
     for epoch in range(start_epoch, MAX_EPOCHS + 1):
