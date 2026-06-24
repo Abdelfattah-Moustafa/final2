@@ -14,12 +14,39 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-# ── EDIT THESE TWO PATHS ────────────────────────────────────────────────────
-# Folder you extracted (contains gloss_vocabulary.json, splits/, poses/)
-DATA_DIR = os.environ.get("ISHARAH_DIR", os.path.expanduser("~/Downloads/signer00_subset"))
-# The trained model file
-MODEL_PATH = os.environ.get("ISHARAH_MODEL", os.path.expanduser("~/Downloads/cslr_best.pt"))
-# ────────────────────────────────────────────────────────────────────────────
+# ── PATHS: auto-detected. Override with env vars ISHARAH_DIR / ISHARAH_MODEL ──
+def _auto_data_dir():
+    if os.environ.get("ISHARAH_DIR"):
+        return os.path.expanduser(os.environ["ISHARAH_DIR"])
+    roots = [os.path.expanduser(p) for p in (
+        "~/Desktop/model", "~/Desktop", "~/Downloads", ".",
+        "~/Downloads/signer00_subset")]
+    for r in roots:
+        hits = glob.glob(os.path.join(r, "**", "gloss_vocabulary.json"), recursive=True)
+        if hits:
+            return os.path.dirname(hits[0])
+    return os.path.expanduser("~/Desktop/model")
+
+
+def _auto_model_path():
+    if os.environ.get("ISHARAH_MODEL"):
+        return os.path.expanduser(os.environ["ISHARAH_MODEL"])
+    roots = [os.path.expanduser(p) for p in ("~/Desktop/model", "~/Desktop", "~/Downloads", ".")]
+    for r in roots:
+        for name in ("cslr_best.pt", "best_model.pt"):
+            hits = glob.glob(os.path.join(r, "**", name), recursive=True)
+            if hits:
+                return hits[0]
+        anypt = glob.glob(os.path.join(r, "**", "*.pt"), recursive=True)
+        if anypt:
+            return anypt[0]
+    return os.path.expanduser("~/Desktop/model/cslr_best.pt")
+
+
+DATA_DIR = _auto_data_dir()
+MODEL_PATH = _auto_model_path()
+print(f"[core] DATA_DIR = {DATA_DIR}")
+print(f"[core] MODEL    = {MODEL_PATH}")
 
 DEVICE = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
 
