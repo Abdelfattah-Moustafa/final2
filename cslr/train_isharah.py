@@ -39,7 +39,7 @@ N_HEAD = 8
 N_LAYERS = 6
 FFN_DIM = 2048
 CONV_KERNEL = 31
-DROPOUT = 0.1
+DROPOUT = 0.2
 
 BATCH_SIZE = 16
 LR = 1e-4
@@ -51,15 +51,16 @@ GRAD_CLIP = 1.0
 NUM_WORKERS = 2
 SEED = 1337
 
-# augmentation (train only) — moderate; paper used coordinate noise + standard aug
-AUG_ROTATE_DEG = 13.0
-AUG_SCALE = 0.10
-AUG_JITTER = 0.02
-AUG_FRAME_DROPOUT = 0.10
-AUG_TIME_WARP = 0.15
+# augmentation (train only) — strengthened to fight the overfitting plateau
+AUG_ROTATE_DEG = 16.0
+AUG_SCALE = 0.15
+AUG_JITTER = 0.03
+AUG_FRAME_DROPOUT = 0.15
+AUG_TIME_WARP = 0.20
 AUG_MIRROR_PROB = 0.5
-AUG_TIME_MASK_N = 1
-AUG_TIME_MASK_MAX = 12
+AUG_TIME_MASK_N = 2
+AUG_TIME_MASK_MAX = 16
+AUG_JOINT_DROPOUT = 0.10
 
 CKPT = "cslr_ckpt.pt"     # full training state (for resume)
 BEST = "cslr_best.pt"     # best model weights only
@@ -243,6 +244,9 @@ def augment(x):                                              # x: (T, 86, 2)
             w = np.random.randint(1, AUG_TIME_MASK_MAX + 1)
             st = np.random.randint(0, len(x) - w)
             x[st:st + w] = 0.0
+    if AUG_JOINT_DROPOUT > 0:
+        mask = np.random.rand(x.shape[1]) < AUG_JOINT_DROPOUT
+        x[:, mask, :] = 0.0
     return x
 
 
